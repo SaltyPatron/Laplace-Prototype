@@ -80,3 +80,46 @@ Datum laplace_vertex_ids(PG_FUNCTION_ARGS){
     }
     PG_RETURN_ARRAYTYPE_P(construct_array(out, m, BYTEAOID, -1, false, TYPALIGN_INT));
 }
+
+/* ---- continuation: laplace_follows(ewkb bytea, phrase bytea[]) -> bytea[]
+ * Every place the phrase occurs as a run inside a LINESTRING ZM path (vertices expanded by their M run
+ * lengths), the ID of the vertex that follows it. The phrase is encoded once into the same X/Y/Z bytes the
+ * vertices store, so matching compares raw vertex bytes (24 per vertex, SSE) and only continuations are
+ * decoded. A path is one trajectory; a phrase is a shorter one; a match is a window at Fréchet distance 0. */
+#include <immintrin.h>
+static void encode(const unsigned char *id, unsigned char *xyz){
+    unsigned __int128 x = 0; for (int i = 15; i >= 0; i--) x = (x << 8) | id[i];
+    uint64 part[3] = { (uint64)(x & ((1ULL << 43) - 1)), (uint64)((x >> 43) & ((1ULL << 43) - 1)), (uint64)(x >> 86) };
+    for (int k = 0; k < 3; k++) { uint64 bits = (1021ULL << 52) | part[k]; memcpy(xyz + 8 * k, &bits, 8); }
+}
+static inline bool same_xyz(const unsigned char *a, const unsigned char *b){         /* 24 bytes: one SSE compare + one 8-byte */
+    __m128i x = _mm_loadu_si128((const __m128i *)a), y = _mm_loadu_si128((const __m128i *)b);
+    return _mm_movemask_epi8(_mm_cmpeq_epi8(x, y)) == 0xFFFF && memcmp(a + 16, b + 16, 8) == 0;
+}
+PG_FUNCTION_INFO_V1(laplace_follows);
+Datum laplace_follows(PG_FUNCTION_ARGS){
+    bytea *w = PG_GETARG_BYTEA_PP(0); ArrayType *pa = PG_GETARG_ARRAYTYPE_P(1);
+    const unsigned char *p = (const unsigned char *)VARDATA_ANY(w); int len = VARSIZE_ANY_EXHDR(w);
+    uint32 type, n = 1; int off = 5; Datum *pe; bool *pn; int np;
+    deconstruct_array(pa, BYTEAOID, -1, false, TYPALIGN_INT, &pe, &pn, &np);
+    if (len < 5 || p[0] != 1 || np == 0) PG_RETURN_NULL();
+    memcpy(&type, p + 1, 4);
+    if (type & 0x20000000) off += 4;
+    if ((type & 0xFF) == 2) { memcpy(&n, p + off, 4); off += 4; } else PG_RETURN_NULL();
+    unsigned char *ph = palloc(24 * np);                                  /* the phrase, as vertex bytes */
+    for (int j = 0; j < np; j++) encode((const unsigned char *)VARDATA_ANY(DatumGetPointer(pe[j])), ph + 24 * j);
+    /* expand the path by run length into a vertex index sequence */
+    int total = 0; const unsigned char *v = p + off;
+    for (uint32 i = 0; i < n; i++) { double m; memcpy(&m, v + 32 * i + 24, 8); total += m < 1 ? 1 : (int) m; }
+    int *seq = palloc(sizeof(int) * (total + 1)), t = 0;
+    for (uint32 i = 0; i < n; i++) { double m; memcpy(&m, v + 32 * i + 24, 8); for (int r = 0; r < (m < 1 ? 1 : (int) m); r++) seq[t++] = i; }
+    Datum *out = palloc(sizeof(Datum) * (total + 1)); int k = 0;
+    for (int s = 0; s + np < total; s++) {
+        if (!same_xyz(v + 32 * seq[s], ph)) continue;                     /* anchor on the first vertex */
+        int j = 1; while (j < np && same_xyz(v + 32 * seq[s + j], ph + 24 * j)) j++;
+        if (j < np) continue;
+        unsigned char id[16]; decode(v + 32 * seq[s + np], id); out[k++] = PointerGetDatum(id_bytea(id));
+    }
+    if (k == 0) PG_RETURN_NULL();
+    PG_RETURN_ARRAYTYPE_P(construct_array(out, k, BYTEAOID, -1, false, TYPALIGN_INT));
+}

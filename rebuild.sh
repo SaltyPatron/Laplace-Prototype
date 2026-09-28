@@ -1,7 +1,7 @@
 #!/bin/bash
 # Full prototype rebuild: compile against ICU 78 (Unicode 17), ingest, load, index, verify, query.
 set -euo pipefail
-R=$HOME/Projects/Laplace-Prototype; O=/vault/Data/LaplacePrototype/out/gutenberg; I=$R/lib/icu78; B=$HOME/Projects/blake3/c
+R=$HOME/Projects/Laplace-Prototype; O=/vault/Data/LaplacePrototype/out/gutenberg; I=$R/lib/icu78; B=/repos/src/blake3/c
 P=(psql -h /tmp -p 5439 -U laplace -d laplace -v ON_ERROR_STOP=1 -q)
 say(){ echo "[$(date +%T)] $*"; }
 say "compiling ingest against ICU $(PKG_CONFIG_PATH=$I/lib/pkgconfig pkg-config --modversion icu-uc)"
