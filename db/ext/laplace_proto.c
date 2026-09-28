@@ -21,7 +21,7 @@ typedef struct { unsigned char id[16]; int64 m[4]; uint64 hilbert; uint32 rank, 
 static const T0 *t0 = NULL;
 static const T0 *tier0(void){
     if (!t0) {
-        const char *path = "/home/ahart/Projects/Laplace-Prototype/tier0/tier0.bin";
+        const char *path = "/repos/src/Laplace-Prototype/tier0/tier0.bin";
         int fd = open(path, O_RDONLY); struct stat st;
         if (fd < 0 || fstat(fd, &st) != 0 || (size_t) st.st_size != NCP * sizeof(T0))
             ereport(ERROR, (errmsg("laplace: cannot map tier 0 at %s", path)));
