@@ -1,0 +1,4 @@
+comment = 'Laplace storage prototype: decode entity IDs packed in geometry ZM'
+default_version = '0.1'
+module_pathname = '$libdir/laplace_proto'
+relocatable = true

@@ -1,0 +1,16 @@
+# generated or large
+tier0/tier0.bin*
+tier0/__pycache__/
+lib/icu/
+lib/icu78/
+lib/*.tgz
+lib/*.md5
+lib/*.o
+lib/*.a
+dag/ingest
+tests/breaktest
+tests/breaktest78
+db/ext/*.o
+db/ext/*.so
+db/ext/*.bc
+out/
