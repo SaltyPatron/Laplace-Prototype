@@ -14,3 +14,7 @@ db/ext/*.o
 db/ext/*.so
 db/ext/*.bc
 out/
+lib/pic/
+recipes/pf
+tests/nfform
+*.out
