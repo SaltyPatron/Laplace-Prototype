@@ -26,14 +26,19 @@ SENSE, LANG = label("sense"), label("lang")
 word_text = {}
 def lbl(s): i = label(s); word_text[i] = s; return i
 dog = lbl("dog")
-senses, ms = q("""select c.object, s.rating, s.deviation, s.matches, w.members from claim c join consensus s on s.claim = c.id
-                  join witness_set w on w.id = s.witnesses where c.subject = %s and c.predicate = %s order by s.rating desc""", B(dog), B(label("eng")))
+# every recorded quantity read as recorded, combined only here: observed usages, then the witness's sense order, then standing
+senses, ms = q("""select c.object, s.rating, s.deviation, s.matches, w.members,
+                         (select coalesce(sum(o.count), 0) from occurrence o where o.claim = c.id) as used,
+                         (select d.position from ordinal d where d.claim = c.id and d.witness = %s) as ord
+                  from claim c join consensus s on s.claim = c.id join witness_set w on w.id = s.witnesses
+                  where c.subject = %s and c.predicate = %s
+                  order by used desc, ord nulls last, s.rating desc""", B(label("Open English WordNet 2025+")), B(dog), B(label("eng")))
 print(f"probe 1 — 'dog' up to its concepts ({ms:.1f} ms):")
 ili_of = {}
 for line in open("/vault/Data/CILI/ili-map-pwn30.tab"):
     i, s_ = line.split(); ili_of[label(i)] = i
-for obj, r, rd, n, members in senses:
-    print(f"   {ili_of.get(bytes(obj), '?'):<8} rating {r:6.0f} ± {rd:3.0f}  matches {n}  witnesses: {', '.join(m.split(': ')[-1] for m in members)}")
+for obj, r, rd, n, members, used, od in senses:
+    print(f"   {ili_of.get(bytes(obj), '?'):<8} used {used:>3}  order {od or '-':>2}  rating {r:6.0f} ± {rd:3.0f}  matches {n}  witnesses: {', '.join(m.split(': ')[-1] for m in members)}")
 langs = ["deu", "fra", "spa", "jpn", "ita", "fin", "pol", "arb"]
 L = {lg: label(lg) for lg in langs}
 target = senses[0][0]
