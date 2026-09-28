@@ -146,10 +146,10 @@ static void expand(uint64_t r){
 static void hexbytes(FILE *f, const void *p, size_t n){ static const char *H = "0123456789abcdef"; const uint8_t *b = p; for (size_t i = 0; i < n; i++) { fputc(H[b[i] >> 4], f); fputc(H[b[i] & 15], f); } }
 static void put_u32(FILE *f, uint32_t v){ hexbytes(f, &v, 4); }
 static void put_d(FILE *f, double v){ hexbytes(f, &v, 8); }
-static void id_point(const uint8_t *id, double xyz[3]){                     /* 43 + 43 + 42 bits into [1,2) mantissas */
+static void id_point(const uint8_t *id, double xyz[3]){                     /* 43 + 43 + 42 bits into mantissas with exponent -2: coordinates in [0.25, 0.5), inside the 4-ball */
     unsigned __int128 v = 0; for (int i = 15; i >= 0; i--) v = (v << 8) | id[i];
     uint64_t part[3] = { (uint64_t)(v & (((unsigned __int128)1 << 43) - 1)), (uint64_t)((v >> 43) & (((unsigned __int128)1 << 43) - 1)), (uint64_t)(v >> 86) };
-    for (int k = 0; k < 3; k++) { uint64_t bits = (1023ull << 52) | part[k]; memcpy(&xyz[k], &bits, 8); }
+    for (int k = 0; k < 3; k++) { uint64_t bits = (1021ull << 52) | part[k];   /* exponent -2: values in [0.25, 0.5), inside the 4-ball */ memcpy(&xyz[k], &bits, 8); }
 }
 
 /* Skilling Hilbert index, 4 dims x 16 bits over [-1,1]^4 (same grid as tier-0 generation). */
