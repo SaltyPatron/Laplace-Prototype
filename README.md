@@ -12,6 +12,6 @@ A local test bench for the Laplace storage layer (not Laplace-Engine). See the w
 - `code/` — Merkle AST over PostgreSQL and CPython with tree-sitter (exact recomposition, subtree sharing)
 - `recipes/` — PNG recipe (pixel trees, byte-exact recomposition via preflate), quadtree storage, JPEG coefficient deduplication on COCO
 
-Data lives outside the repository: Unicode 17 data in /vault/Data/UCD, corpora in /vault/Data (Gutenberg, UD, WordNet, CILI, OMW, PredicateMatrix, chess, COCO, WSD).
+Data lives outside the repository. The file each measurement reads is recorded in Laplace-Wiki at `Research/Corpora/README.md`.
 
 Start the database: `/usr/lib/postgresql/18/bin/pg_ctl -D /vault/Data/LaplacePrototype/pgdata -l /vault/Data/LaplacePrototype/pg.log start`
