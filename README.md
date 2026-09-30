@@ -1,6 +1,6 @@
 # Laplace storage prototype
 
-A local test bench for the Laplace storage layer (not Laplace-Engine). See the wiki's Research: Prototype page for results.
+A local test bench for the Laplace storage layer (not Laplace-Engine). The results are on the wiki's [Research: Prototype](https://github.com/SaltyPatron/Laplace-Wiki/blob/main/Research/Prototype.md) page, published at <https://saltypatron.github.io/Laplace-Wiki/Research/Prototype/>.
 
 - `tier0/gen_tier0.py` — tier 0 table (DUCET order, H1 placement, exact fixed-point coordinates, BLAKE3-128 IDs, Hilbert values) and fingerprint
 - `dag/ingest.c` — decomposer and ingestion (ICU 78 UAX #29, BLAKE3, integer centroids, run-length paths, recomposition check, COPY output)
@@ -12,6 +12,6 @@ A local test bench for the Laplace storage layer (not Laplace-Engine). See the w
 - `code/` — Merkle AST over PostgreSQL and CPython with tree-sitter (exact recomposition, subtree sharing)
 - `recipes/` — PNG recipe (pixel trees, byte-exact recomposition via preflate), quadtree storage, JPEG coefficient deduplication on COCO
 
-Data lives outside the repository. The file each measurement reads is recorded in Laplace-Wiki at `Corpora/README.md`.
+Data lives outside the repository. What each measurement read is recorded with the measurement, under [Research](https://github.com/SaltyPatron/Laplace-Wiki/blob/main/Research/README.md) in Laplace-Wiki.
 
 Start the database: `/usr/lib/postgresql/18/bin/pg_ctl -D /vault/Data/LaplacePrototype/pgdata -l /vault/Data/LaplacePrototype/pg.log start`
