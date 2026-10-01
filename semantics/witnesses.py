@@ -192,24 +192,24 @@ def ewkb_path(ids):
     if len(runs) == 1: x, y, z = id_xyz(runs[0][0]); return b"\x01" + struct.pack("<I", 0xC0000001) + struct.pack("<4d", x, y, z, runs[0][1])
     return b"\x01" + struct.pack("<II", 0xC0000002, len(runs)) + b"".join(struct.pack("<4d", *id_xyz(i), r) for i, r in runs)
 todo = [(k, v) for k, v in new_entities.items() if k not in existing]
-psycopg2.extras.execute_values(cur, "insert into entity (id, coord, tier, hilbert) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into entity (id, coord, tier, hilbert) values %s",
     [(psycopg2.Binary(k), psycopg2.Binary(ewkb_point(m)), t, 0) for k, (m, t, _) in todo], template="(%s, st_geomfromewkb(%s), %s, %s)", page_size=5000)
-psycopg2.extras.execute_values(cur, "insert into physicality (entity, path) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into physicality (entity, path) values %s",
     [(psycopg2.Binary(k), psycopg2.Binary(ewkb_path(ch))) for k, (_, _, ch) in todo], template="(%s, st_geomfromewkb(%s))", page_size=5000)
 say(f"label entities: {len(new_entities):,} needed, {len(existing):,} already stored, {len(todo):,} created")
 sets = {}
 for st in standing.values():
     key = tuple(sorted(st[5]))
     if key not in sets: sets[key] = comp([label(w) for w in key])
-psycopg2.extras.execute_values(cur, "insert into witness_set (id, members) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into witness_set (id, members) values %s",
     [(psycopg2.Binary(i), list(k)) for k, i in sets.items()], page_size=2000)
-psycopg2.extras.execute_values(cur, "insert into claim (id, subject, predicate, object) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into claim (id, subject, predicate, object) values %s",
     [tuple(psycopg2.Binary(x) for x in (cid, *c)) for cid, c in claims.items()], page_size=10000)
-psycopg2.extras.execute_values(cur, "insert into consensus (claim, rating, deviation, volatility, matches, witnesses) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into consensus (claim, rating, deviation, volatility, matches, witnesses) values %s",
     [(psycopg2.Binary(cid), st[0], st[1], st[2], st[3], psycopg2.Binary(sets[tuple(sorted(st[5]))])) for cid, st in standing.items()], page_size=10000)
-psycopg2.extras.execute_values(cur, "insert into occurrence (claim, witness, count) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into occurrence (claim, witness, count) values %s",
     [(psycopg2.Binary(cid), psycopg2.Binary(FW), n) for cid, n in observed.items()], page_size=10000)
-psycopg2.extras.execute_values(cur, "insert into ordinal (claim, witness, position) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into ordinal (claim, witness, position) values %s",
     [(psycopg2.Binary(cid), psycopg2.Binary(WID[w]), n) for (cid, w), n in ordinal.items()], page_size=10000)
 cur.execute("create index if not exists claim_subject on claim (subject, predicate); create index if not exists claim_object on claim (object, predicate); analyze claim; analyze consensus;")
 con.commit()

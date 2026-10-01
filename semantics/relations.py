@@ -67,13 +67,17 @@ def ewkb_path(ids):
         else: runs.append([i, 1])
     if len(runs) == 1: return b"\x01" + struct.pack("<I", 0xC0000001) + struct.pack("<4d", *id_xyz(runs[0][0]), runs[0][1])
     return b"\x01" + struct.pack("<II", 0xC0000002, len(runs)) + b"".join(struct.pack("<4d", *id_xyz(i), r) for i, r in runs)
-psycopg2.extras.execute_values(cur, "insert into entity (id, coord, tier, hilbert) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into entity (id, coord, tier, hilbert) values %s",
     [(B(k), B(ewkb_point(m)), t, 0) for k, (m, t, _) in todo], template="(%s, st_geomfromewkb(%s), %s, %s)")
-psycopg2.extras.execute_values(cur, "insert into physicality (entity, path) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into physicality (entity, path) values %s",
     [(B(k), B(ewkb_path(ch))) for k, (_, _, ch) in todo], template="(%s, st_geomfromewkb(%s))")
-psycopg2.extras.execute_values(cur, "insert into witness_set (id, members) values %s on conflict do nothing", [(B(i), list(k)) for k, i in sets.items()])
-psycopg2.extras.execute_values(cur, "insert into claim (id, subject, predicate, object) values %s on conflict do nothing",
+# ask first: which of these IDs are already recorded; only the rest are written, so nothing can conflict
+cur.execute("select id from witness_set where id = any(%s)", ([B(i) for i in sets.values()],)); have_ws = {bytes(r[0]) for r in cur.fetchall()}
+psycopg2.extras.execute_values(cur, "insert into witness_set (id, members) values %s", [(B(i), list(k)) for k, i in sets.items() if i not in have_ws])
+cur.execute("select id from claim where id = any(%s)", ([B(r[0]) for r in rows],)); have_c = {bytes(r[0]) for r in cur.fetchall()}
+rows = [r for r in rows if r[0] not in have_c]
+psycopg2.extras.execute_values(cur, "insert into claim (id, subject, predicate, object) values %s",
     [(B(c), B(a), B(p), B(b)) for c, a, p, b, *_ in rows], page_size=10000)
-psycopg2.extras.execute_values(cur, "insert into consensus (claim, rating, deviation, volatility, matches, witnesses) values %s on conflict do nothing",
+psycopg2.extras.execute_values(cur, "insert into consensus (claim, rating, deviation, volatility, matches, witnesses) values %s",
     [(B(c), r, rd, vol, 1, B(ws)) for c, a, p, b, r, rd, vol, ws in rows], page_size=10000)
 cur.execute("analyze claim; analyze consensus"); con.commit(); say(f"written; {len(todo)} label entities created")
