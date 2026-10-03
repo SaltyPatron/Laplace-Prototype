@@ -15,7 +15,7 @@ def sentences(path):
         toks = [(t.get("id") or "-", t.text) for t in s]
         if toks: yield s.get("id"), toks
 def pipe(dev):
-    return stanza.Pipeline("en", dir="/vault/Data/LaplaceResearch/models/stanza", processors="tokenize,pos,lemma,depparse",
+    return stanza.Pipeline("en", dir="/vault/models/stanza", processors="tokenize,pos,lemma,depparse",
                            tokenize_pretokenized=True, use_gpu=(dev == "gpu"), verbose=False, download_method=None)
 def parse(nlp, sents):
     doc = nlp([[w.replace(" ", "_") for _, w in toks] for _, toks in sents])
