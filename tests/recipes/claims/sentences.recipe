@@ -1,0 +1,11 @@
+name sentences
+match sentences.attested
+tier row by \n
+escaped \
+names "Sentence id" Lang Text
+tier field by \t
+thing row Text
+content Text Lang
+key row "Sentence id"
+relation "ISO 639-3 language code" Lang
+attest row Lang

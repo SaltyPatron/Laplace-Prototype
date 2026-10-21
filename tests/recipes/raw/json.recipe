@@ -1,0 +1,3 @@
+name raw-json
+match *.json
+grammar json
