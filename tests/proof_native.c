@@ -77,9 +77,12 @@ static void cache(const lp_tier0_record *tier0,const char *path){
         const lp_list *list=h->list+li; const lp_tier0_record *record=lp_highway_at(h,list,slot);
         if (!record) continue;
         const char *id=lp_highway_identifier(h,list,slot); require(id!=NULL,"embedded identifier text");
-        lp_ref value=lp_text_decompose(text,(const uint8_t *)id,strlen(id),NULL,NULL);
+        const char *const *parts; size_t np=lp_highway_identifier_parts(h,list,slot,&parts);
+        require(np>0,"embedded identifier components"); lp_ref *p=calloc(np,sizeof *p); require(p!=NULL,"identifier components allocation");
+        for (size_t j=0; j<np; j++) p[j]=lp_text_decompose(text,(const uint8_t *)parts[j],strlen(parts[j]),NULL,NULL);
+        lp_ref value=np==1 ? p[0] : lp_ref_compose(p,np,lp_tier_above(p,np)); free(p);
         require(lp_id_eq(&value.id,&record->id) && !memcmp(value.c.m,record->m,sizeof record->m),"canonical Highway identifier");
-        require(lp_highway_key(h,list,id)==slot && lp_highway_slot(h,list,&value.id)==slot,"constant-time slot and ID lookup"); count++;
+        require((np>1 || lp_highway_key(h,list,id)==slot) && lp_highway_slot(h,list,&value.id)==slot,"constant-time slot and ID lookup"); count++;
         for (size_t to=0; to<h->nlists; to++) { const lp_edge *out; size_t n=lp_highway_edges(h,list->name,slot,h->list[to].name,&out); edges+=n;
             for (size_t e=0; e<n; e++) {
                 require(lp_highway_at(h,h->list+to,out[e].to)!=NULL,"crosswalk target exists");
