@@ -19,10 +19,12 @@ static uint8_t *unhex(const char *hex,size_t *size){
 static bool coordinate(void *context,const lp_ewkb_span *span){
     double xyzm[4]; return span->count==1 && lp_ewkb_vertex(span,0,xyzm) && lp_coord_of_xyzm(xyzm,context);
 }
-static lp_ref child(lp_idmap *nodes,const lp_tier0_record *tier0,const lp_id *id){
+static lp_ref child(lp_idmap *nodes,const lp_tier0_record *tier0,const lp_id *parent,const lp_id *id,int *missing){
     int64_t at=lp_idmap_find(nodes,id);
     if (at>=0) return ((Stored *)lp_idmap_at(nodes,(size_t)at))->value;
-    int64_t cp=lp_tier0_codepoint(tier0,id); require(cp>=0,"every child is recorded or a scalar leaf");
+    int64_t cp=lp_tier0_codepoint(tier0,id);
+    if (cp<0) { char p[33],c[33]; lp_hex(parent->b,16,p); lp_hex(id->b,16,c);
+        fprintf(stderr,"missing child %s of persisted parent %s\n",c,p); *missing=1; return (lp_ref){0}; }
     return lp_ref_atom(tier0,(uint32_t)cp);
 }
 static uint32_t component(uint32_t *parent,uint32_t at){
@@ -42,27 +44,30 @@ static void database(const char *conninfo,const lp_tier0_record *tier0){
         require(lp_ewkb_visit(point,size,coordinate,&node->value.c,NULL),"persisted POINT ZM coordinate"); free(point);
         node->path=unhex(PQgetvalue(result,i,3),&node->bytes);
     }
-    PQclear(result); size_t wrong_height=0;
+    PQclear(result); size_t wrong_height=0,invalid=0;
     for (size_t i=0; i<lp_idmap_count(nodes); i++) {
         Stored *node=lp_idmap_at(nodes,i);
         lp_path path=lp_path_of(node->path,node->bytes); size_t count=lp_path_len(path);
         require(count>=2,"every composed path has at least two logical children");
         lp_ref *parts=calloc(count,sizeof *parts); require(parts!=NULL,"path allocation");
-        size_t at=0; uint8_t height=0;
+        size_t at=0; uint8_t height=0; int missing=0;
         for (size_t v=0; v<path.n; v++) {
-            lp_id id=lp_path_id(path,v); lp_ref value=child(nodes,tier0,&id);
+            lp_id id=lp_path_id(path,v); lp_ref value=child(nodes,tier0,&node->value.id,&id,&missing);
             if (value.tier>=height) height=(uint8_t)(value.tier+1);
             for (uint32_t run=lp_path_run(path,v); run; run--) parts[at++]=value;
         }
         require(at==count,"ordered run expansion");
+        if (missing) { char id[33]; lp_hex(node->value.id.b,16,id); fprintf(stderr,"invalid parent %s: missing child\n",id);
+            free(parts); invalid++; continue; }
         lp_ref expected=lp_ref_compose(parts,count,height); free(parts);
         require(lp_id_eq(&expected.id,&node->value.id),"persisted ID hashes its actual ordered children");
         require(!memcmp(expected.c.m,node->value.c.m,sizeof expected.c.m),"persisted coordinate composes from actual child coordinates");
-        if (height!=node->value.tier) wrong_height++;
+        if (height!=node->value.tier) { char id[33]; lp_hex(node->value.id.b,16,id);
+            fprintf(stderr,"invalid parent %s: tier %u expected %u\n",id,node->value.tier,height); wrong_height++; }
     }
-    printf("database: %d persisted IDs and coordinates verified; %zu tier-height violations\n",rows,wrong_height);
+    printf("database: %zu persisted IDs and coordinates verified; %zu tier-height violations\n",(size_t)rows-invalid,wrong_height);
     for (size_t i=0; i<lp_idmap_count(nodes); i++) free(((Stored *)lp_idmap_at(nodes,i))->path);
-    lp_idmap_free(nodes); PQfinish(pg); require(!wrong_height,"tier=max(child.tier)+1");
+    lp_idmap_free(nodes); PQfinish(pg); require(!invalid,"every child is recorded or a scalar leaf"); require(!wrong_height,"tier=max(child.tier)+1");
 }
 static void cache(const lp_tier0_record *tier0,const char *path){
     const lp_highway *h=lp_highway_map(path); require(h!=NULL,"single-file Highway mapping");
