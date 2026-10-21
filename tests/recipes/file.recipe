@@ -1,0 +1,7 @@
+name file
+# What the OS keeps of every file, as the OS names it: its pathname and filename (POSIX) and what statx returns. A
+# file's own recipe may dispose of any of these otherwise. The metadata tree holds what the file is and where it is;
+# the access time is not, since reading the file changes it.
+metadata pathname filename stx_mode stx_uid stx_gid stx_nlink stx_ino stx_size stx_blocks stx_blksize stx_attributes
+metadata stx_dev_major stx_dev_minor stx_rdev_major stx_rdev_minor stx_btime stx_ctime stx_mtime
+omit stx_atime
