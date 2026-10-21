@@ -1,0 +1,5 @@
+@prefix	owl:	<http://www.w3.org/2002/07/owl#> .
+@prefix	odwn13:	<http://odwn-rdf.vu.nl/odwn13/> .
+@prefix ili: <http://globalwordnet.org/cili/> .
+
+ili:i69801	owl:sameAs	odwn13:06341431-n . # mevr.
