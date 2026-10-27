@@ -1,9 +1,0 @@
-CREATE FUNCTION laplace_vertex_ids(bytea) RETURNS bytea[]
-  AS 'MODULE_PATHNAME', 'laplace_vertex_ids' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
-
-CREATE FUNCTION laplace_cp_id(integer) RETURNS bytea
-  AS 'MODULE_PATHNAME', 'laplace_cp_id' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION laplace_seq_id(text) RETURNS bytea
-  AS 'MODULE_PATHNAME', 'laplace_seq_id' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION laplace_follows(bytea, bytea[]) RETURNS bytea[]
-  AS 'MODULE_PATHNAME', 'laplace_follows' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;

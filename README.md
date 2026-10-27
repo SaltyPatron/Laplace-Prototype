@@ -1,21 +1,30 @@
-# Laplace storage prototype
+# Laplace native proofs
 
-A local test bench for the Laplace storage layer (not Laplace-Engine). The results are on the wiki's [Research: Prototype](https://github.com/SaltyPatron/Laplace-Wiki/blob/main/Research/Prototype.md) page, published at <https://saltypatron.github.io/Laplace-Wiki/Research/Prototype/>.
+This repository verifies the production Native, Engine and PostgreSQL implementations.
+It contains the database round-trip and self-contained Highway proofs, plus native
+model-export consumer checks. Historical measurements remain in
+[Laplace-Wiki Research](https://saltypatron.github.io/Laplace-Wiki/Research/).
 
-- `tier0/gen_tier0.py` — tier 0 table (DUCET order, H1 placement, exact fixed-point coordinates, BLAKE3-128 IDs, Hilbert values) and fingerprint
-- `dag/ingest.c` — decomposer and ingestion (ICU 78 UAX #29, BLAKE3, integer centroids, run-length paths, recomposition check, COPY output)
-- `db/` — schema, extension (`laplace_vertex_ids`), load and index scripts; PostgreSQL 18 cluster at /vault/Data/LaplacePrototype/pgdata, port 5439
-- `tests/` — verification (`verify.py`), queries (`queries.py`, `gap_query.py`), UCD break conformance (`breaktest.c`)
-- `rebuild.sh` — full rebuild: compile, ingest, load, index, verify, query
-- `chess/` — Glicko-2 ratings from observed games, per game mode, replayed in play order
-- `chess/order_free.py` — order-free ratings: intrinsic move quality (`intrinsic.py`, Regan & Haworth 2011, from `analyze.py`'s Stockfish MultiPV analysis of games chosen by `select_games.py`) and Whole-History Rating (`whr.py`, Coulom 2008) with stated Elo and intrinsic estimates as separate observation channels, scored against Glicko-2 (`glicko2.py`) on TWIC classical (`pool.py`), with shuffled-order and late-arrival tests
-- `semantics/` — word sense disambiguation by pull (WordNet highway + SemCor witness) on the Raganato et al. framework
-- `code/` — Merkle AST over PostgreSQL and CPython with tree-sitter (exact recomposition, subtree sharing)
-- `models/inspect-gguf.mjs` — inspect a GGUF container, canonical BLAKE3 slot map, duplicate token strings, tensor values, and direct lookup readout; run `node models/inspect-gguf.mjs MODEL REPORT.json`
-- `models/run-prompts.mjs` — run the eight June prompts plus bare-word and case diagnostics in a supplied CPU runtime, retaining exact arguments, output, diagnostics, executable hash and version; run `node models/run-prompts.mjs MODEL CPU_RUNTIME OUTPUT_DIR`
-- `models/README.md` — native CPU construction, complete-vocabulary evaluation and attention/FFN ablation tools for generated model exports
-- `recipes/` — PNG recipe (pixel trees, byte-exact recomposition via preflate), quadtree storage, JPEG coefficient deduplication on COCO
+- [tests/README.md](tests/README.md) describes Gates A/B, their native reader,
+  real Engine ingestion, fixture reconstruction and deduplication receipts.
+- `rebuild.sh` forwards explicit binaries, caches and a test database to that runner.
+- [models/README.md](models/README.md) describes native CPU model consumers,
+  tensor/state verification and runtime measurements.
+- `tier0/fingerprint.txt` identifies the canonical scalar cache.
 
-Data lives outside the repository. What each measurement read is recorded with the measurement, under [Research](https://github.com/SaltyPatron/Laplace-Wiki/blob/main/Research/README.md) in Laplace-Wiki.
+Generate Tier-0 with the installed native Engine and existing local Unicode data:
 
-Start the database: `/usr/lib/postgresql/18/bin/pg_ctl -D /vault/Data/LaplacePrototype/pgdata -l /vault/Data/LaplacePrototype/pg.log start`
+```powershell
+laplace tier0 -u E:\Data\Ingest\UCD -o E:\Data\Laplace\work\tier0\tier0.bin
+```
+
+The Native owner defines Unicode ordering, CORE-MATH projection, exact fixed-point
+quantization and cache validation. The cache contains 1,112,064 Unicode scalar
+records, sorted by content ID. The removed Python coordinate generators,
+independent prototype ingester/schema and exploratory database scripts are available
+in Git history; they are not deployment or acceptance paths.
+
+Local operation uses the host's configured PostgreSQL service. The proof runner
+uses an explicitly named temporary database in an existing cluster; CI or the
+operator owns its creation and removal. This repository does not provision a
+separate PostgreSQL instance. Data and build artifacts live outside the repository.
