@@ -1,0 +1,418 @@
+        byte[] configJson = BuildHfConfigJson(dModel, nLayers, nHeads, nKv, intermR, vocab);
+        var recipe = LlamaRecipeExtractor.ParseBytes(configJson, "foundry architecture bridge");
+
+        using var manifest = SynthInterop.ArchTemplateManifestMaterialize(configJson, "llama", out var manifestError);
+        if (manifest is null) return Fail(manifestError ?? "architecture manifest unavailable");
+        TensorSpec[] specs = manifest.Specs;
+        int tensorCount = manifest.Count;
+        Console.WriteLine($"  dims: vocab={vocab} hidden={dModel} layers={nLayers} heads={nHeads} headDim={headDim} ffn={intermR} | {tensorCount} tensors");
+
+
+
+
+
+
+
+        double relTol = FoundryDefaults.RelErrTol;
+        int kFfn = Math.Min(intermR, dModel);
+        var emptyF = new FoundryExport.Factors(Array.Empty<float>(), Array.Empty<float>(), 0, dModel, 0, 1);
+        double split = Math.Pow(Math.Max(1, nLayers), -0.25);
+        // Floor synthesis runs: corrections perturb the calibrated floor, never overwrite it.
+        double floorGain = conditionalFloor ? FoundryDefaults.FloorCorrectionGain : 1.0;
+        double attnScale = FoundryDefaults.AttnGain * split;
+        double layerScale = FoundryDefaults.ResidGain * split * floorGain;
+        bool contCompile = desc.ContinuationCompile;
+        // compile=continuation zeroes every operator outside the continuation set; the
+        // declared operators it drops are named on stderr.
+        if (contCompile)
+        {
+            var dropped = desc.Layers
+                .SelectMany(l => l.Heads.Select(h => h.Key).Append(l.Ffn.Key))
+                .Distinct(StringComparer.Ordinal)
+                .Where(k => !FoundryExport.IsContinuationOperator(k))
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToList();
+            if (dropped.Count > 0)
+                Console.Error.WriteLine(
+                    $"foundry: compile=continuation ZEROES {dropped.Count} declared "
+                    + $"operator(s) in the emitted tensors: {string.Join(", ", dropped)}");
+        }
+        double ctxQk = FoundryDefaults.CtxQk * split;
+        double OpAttnScale(string key) => (contCompile && !FoundryExport.IsContinuationOperator(key)) ? 0.0 : attnScale;
+        double OpResidScale(string key) => (contCompile && !FoundryExport.IsContinuationOperator(key)) ? 0.0 : layerScale;
+
+        // Highway band membership keys the FFN gate. Without the highway perfcache the
+        // centroids stay empty and the gate is constant.
+        if (!HighwayPerfcache.IsLoaded)
+        {
+            try { HighwayPerfcache.LoadDefault(); }
+            catch (Exception ex) { Console.WriteLine($"  (highway perfcache unavailable — banded gate falls back to constant: {ex.Message})"); }
+        }
+        var highwayMasks = await FoundryExport.FillHighwayMasksAsync(ds, tokenSlots, vocab);
+        const int highwayBands = 13; // salience bands (relation_types.toml [ranks])
+        var gateCentroids = new List<double[]?[]>(nLayers);
+
+        var R = (double[])E.Clone();
+        var fAttnL = new List<Dictionary<string, FoundryExport.Factors>>(nLayers);
+        var fOvL = new List<Dictionary<string, FoundryExport.Factors>>(nLayers);
+        var fFfnL = new List<Dictionary<string, FoundryExport.Factors>>(nLayers);
+        const double normEps = 1e-6;
+        for (int li = 0; li < nLayers; li++)
+        {
+            // Band centroids: unit mean of member rows of this layer's input R (content dims).
+            var cents = new double[]?[highwayBands];
+            if (HighwayPerfcache.IsLoaded)
+            {
+                for (int b = 0; b < highwayBands; b++)
+                {
+                    var bm = HighwayPerfcache.BandMask((byte)b);
+                    if (bm.IsZero) continue;
+                    var acc = new double[dModel];
+                    int members = 0;
+                    for (int t = 0; t < vocab; t++)
+                    {
+                        if ((highwayMasks[t] & bm).IsZero) continue;
+                        long to = (long)t * dModel;
+                        for (int i = 0; i < dModel - 1; i++) acc[i] += R[to + i];
+                        members++;
+                    }
+                    if (members == 0) continue;
+                    double n2 = 0;
+                    for (int i = 0; i < dModel - 1; i++) n2 += acc[i] * acc[i];
+                    if (n2 <= 1e-24) continue;
+                    double inv = 1.0 / Math.Sqrt(n2);
+                    for (int i = 0; i < dModel - 1; i++) acc[i] *= inv;
+                    acc[dModel - 1] = 0.0;
+                    cents[b] = acc;
+                }
+            }
+            gateCentroids.Add(cents);
+
+            var lyr = desc.Layers[li];
+            var fa = new Dictionary<string, FoundryExport.Factors>(StringComparer.Ordinal);
+            var fo = new Dictionary<string, FoundryExport.Factors>(StringComparer.Ordinal);
+            var ff = new Dictionary<string, FoundryExport.Factors>(StringComparer.Ordinal);
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var h in lyr.Heads) if (h.Key != "context") keys.Add(h.Key);
+            keys.Add(lyr.Ffn.Key);
+
+            var update = new double[(long)vocab * dModel];
+            foreach (var opKey in keys)
+            {
+                if (!planeByOp.TryGetValue(opKey, out var plane) || plane.Nnz == 0)
+                { fa[opKey] = emptyF; fo[opKey] = emptyF; ff[opKey] = emptyF; continue; }
+                var lowered = FoundryExport.LowerOperator(R, vocab, dModel, plane);
+                var m = lowered.Values;
+                Console.WriteLine($"  layer {li} {opKey}: basis rank {lowered.BasisRank}, score residual {lowered.ScoreError:G6}, value residual {lowered.ValueError:G6}");
+                var mResid = (double[])m.Clone();
+                for (int d = 0; d < dModel; d++) mResid[(long)d * dModel + d] -= 1.0;
+                int copies=Math.Max(1,lyr.Heads.Count(h=>h.Key==opKey));
+                fa[opKey] = FoundryExport.Factor(lowered.Scores,dModel,copies*(FoundryDefaults.DisableRope?headDim-2:headDim),relTol,transpose:false,preserveSpectrum:true);
+                fo[opKey] = FoundryExport.Factor(mResid,dModel,copies*headDim,relTol,transpose:true,preserveSpectrum:true);
+                ff[opKey] = FoundryExport.Factor(mResid, dModel, kFfn, relTol, transpose: true,preserveSpectrum:true);
+
+                double sc = OpResidScale(opKey);
+
+
+
+
+                if(sc>0) FoundryExport.ApplyOperator(R,vocab,dModel,mResid,sc,update);
+            }
+            // Context head projects the trajectory plane when it has edges; otherwise the
+            // head is written as identity QK/V.
+            if (trajPlane.Nnz > 0)
+            {
+                var ctxLowered = FoundryExport.LowerOperator(R, vocab, dModel, trajPlane);
+                var ctxM = ctxLowered.Values;
+                var ctxResid = (double[])ctxM.Clone();
+                for (int d = 0; d < dModel; d++) ctxResid[(long)d * dModel + d] -= 1.0;
+                fa["context"] = FoundryExport.Factor(ctxLowered.Scores, dModel, headDim, relTol, transpose: false,preserveSpectrum:true);
+                fo["context"] = FoundryExport.Factor(ctxResid, dModel, headDim, relTol, transpose: true,preserveSpectrum:true);
+            }
+
+            // Distinct selected operators retain their own transforms. Repeated
+            // heads receive disjoint SVD mode ranges at tensor fill below.
+
+            fAttnL.Add(fa); fOvL.Add(fo); fFfnL.Add(ff);
+
+            // Recenter each dimension of the update across the vocab before the norm: this
+            // removes the shared (hub) component that summed diffusion converges toward;
+            // RMSNorm below controls norm, not diversity.
+            {
+                var colMean = new double[dModel];
+                for (int t = 0; t < vocab; t++)
+                {
+                    long to = (long)t * dModel;
+                    for (int i = 0; i < dModel; i++) colMean[i] += update[to + i];
+                }
+                for (int i = 0; i < dModel; i++) colMean[i] /= vocab;
+                System.Threading.Tasks.Parallel.For(0, vocab, t =>
+                {
+                    long to = (long)t * dModel;
+                    for (int i = 0; i < dModel; i++) update[to + i] -= colMean[i];
+                });
+            }
+
+            for (int t = 0; t < vocab; t++)
+            {
+                long to = (long)t * dModel;
+                double ss = 0;
+                for (int i = 0; i < dModel; i++) { double v = R[to + i] + update[to + i]; R[to + i] = v; ss += v * v; }
+                double inv = 1.0 / Math.Sqrt(ss / dModel + normEps);
+                for (int i = 0; i < dModel; i++) R[to + i] *= inv;
+            }
+        }
+        Stage($"layer loop (project+factor+diffuse × {nLayers} layers)");
+
+        var lmHead = new double[(long)vocab * dModel];
+        if (desc.LmHead.Key is "conditional" or "conditional_pos")
+        {
+            // The V·√Σ factor of the conditional SVD is the lm_head as is: no idf,
+            // suppression, or normalization, since its rows are log-probability factors.
+            if (lmHeadCond is null)
+                return Fail("lm_head op 'conditional' requires embed op 'conditional' (the two factors come from one SVD)");
+            Array.Copy(lmHeadCond, lmHead, lmHeadCond.Length);
+            Console.WriteLine("  lm_head: conditional-floor factor (calibrated; no post-processing)");
+        }
+        else
+        {
+            var pl = desc.LmHead.Key == "trajectory" ? trajPlane
+                   : planeByOp.TryGetValue(desc.LmHead.Key, out var lp) ? lp : FoundryExport.PlaneCoo.Empty;
+            // A trajectory lm_head also unions the sentence_order plane, so the readout
+            // continues across sentence boundaries, not only within word adjacency.
+            if (desc.LmHead.Key == "trajectory")
+            {
+                var bridge = planeByOp.TryGetValue("sentence_order", out var sb) && sb.Nnz > 0
+                    ? sb
+                    : FoundryExport.Normalize(await FoundryExport.ReadSentenceOrderAsync(ds, tokenSlots, cap: degreeCap));
+                if (bridge.Nnz > 0)
+                {
+                    pl = FoundryExport.Union(pl, bridge);
+                    Console.WriteLine($"  lm_head: trajectory plane + sentence_order bridge ({bridge.Nnz:N0} boundary edges)");
+                }
+            }
+            int dC = dModel - 1;
+            var inDeg = new double[vocab];
+            for (long e2 = 0; e2 < pl.Nnz; e2++)
+            {
+                int x = pl.Rows[e2], y = pl.Cols[e2];
+                if (x < 0 || x >= vocab || y < 0 || y >= vocab) continue;
+                double w = pl.Vals[e2];
+                long yo = (long)y * dModel, xo = (long)x * dModel;
+
+
+                // Accumulates the final layer representation R, not the input embedding E.
+                for (int c = 0; c < dC; c++) lmHead[yo + c] += w * R[xo + c];
+                inDeg[y] += Math.Abs(w);
+            }
+            for (int v = 0; v < vocab; v++)
+            {
+                long off = (long)v * dModel;
+                double idf = 1.0 / (inDeg[v] + 1.0);
+                for (int c = 0; c < dC; c++) lmHead[off + c] *= idf;
+                lmHead[off + dC] = 0.0;
+            }
+
+
+
+            // Zero byte rows and bare aliases (bare pieces with a space-led twin); bare-only
+            // pieces such as punctuation stay emittable.
+            var hasSpaceLed = new HashSet<Hash128>();
+            foreach (var t in tokens)
+                if (t.Role.HasFlag(TokenRole.LeadingSpace)) hasSpaceLed.Add(t.EntityId);
+            int suppressed = 0;
+            foreach (var t in tokens)
+            {
+                if (t.TokenId < 0 || t.TokenId >= vocab) continue;
+                bool bareAlias = !t.Role.HasFlag(TokenRole.LeadingSpace) && hasSpaceLed.Contains(t.EntityId);
+                if (!(t.IsByteLevel || bareAlias)) continue;
+                long o = (long)t.TokenId * dModel;
+                for (int c = 0; c < dModel; c++) lmHead[o + c] = 0.0;
+                suppressed++;
+            }
+            Console.WriteLine($"  lm_head: suppressed {suppressed:N0} byte + bare-alias rows (bare-only pieces kept)");
+
+
+
+
+
+            // Readout rows: subtract the mean live row, then unit-norm, so ranking is by
+            // differential direction and hub rows (close to the mean) fall toward zero.
+            // Evidence mass (in-degree) only breaks ties: a bounded ≤10% multiplicative
+            // bonus, never the magnitude.
+            {
+                var meanRow = new double[dC];
+                int live = 0;
+                for (int v = 0; v < vocab; v++)
+                {
+                    long off = (long)v * dModel;
+                    double n2 = 0;
+                    for (int c = 0; c < dC; c++) n2 += lmHead[off + c] * lmHead[off + c];
+                    if (n2 <= 1e-24) continue;
+                    for (int c = 0; c < dC; c++) meanRow[c] += lmHead[off + c];
+                    live++;
+                }
+                if (live > 1)
+                    for (int c = 0; c < dC; c++) meanRow[c] /= live;
+                for (int v = 0; v < vocab; v++)
+                {
+                    long off = (long)v * dModel;
+                    double n2 = 0;
+                    for (int c = 0; c < dC; c++) n2 += lmHead[off + c] * lmHead[off + c];
+                    if (n2 <= 1e-24) continue;
+                    for (int c = 0; c < dC; c++) lmHead[off + c] -= meanRow[c];
+                }
+            }
+            for (int v = 0; v < vocab; v++)
+            {
+                long off = (long)v * dModel;
+                double n2 = 0;
+                for (int c = 0; c < dC; c++) { double t = lmHead[off + c]; n2 += t * t; }
+                if (n2 <= 1e-24) continue;
+                double mass = inDeg[v];
+                double scale = (1.0 + 0.1 * mass / (mass + 4.0)) / Math.Sqrt(n2);
+                for (int c = 0; c < dC; c++) lmHead[off + c] *= scale;
+            }
+        }
+
+
+
+        double gateZ = FoundryDefaults.GateZ;
+        double gateCol = gateZ / Math.Sqrt(dModel / 2.0);
+        double upGain = 1.0 / FoundryExport.Silu(gateZ);
+
+        // Every RMSNorm weight is written as all-ones.
+
+        var gguf = SynthInterop.GgufWriterCreate(outputPath);
+        if (gguf == IntPtr.Zero) return Fail($"gguf_writer_create failed for {outputPath}");
+
+
+        WriteGgufMetadata(gguf, recipe, tokens, Path.GetDirectoryName(tokenizerPath) ?? modelDir, byteBpe: true);
+        if(pathPrograms.TryGetValue(desc.LmHead.Key,out var metadataProgram)) metadataProgram.WriteReceipt(gguf,outputPath,tokens);
+        var tensorReceipts=new List<object>();
+        var sw = Stopwatch.StartNew();
+        for (int i = 0; i < tensorCount; i++)
+        {
+            string name; ulong rows, cols;
+            unsafe
+            {
+                var sp = specs[i];
+                name = Marshal.PtrToStringUTF8((IntPtr)sp.Name) ?? "";
+                rows = sp.Rank >= 1 ? sp.Shape[0] : 1;
+                cols = sp.Rank >= 2 ? sp.Shape[1] : 1;
+            }
+            long nElem = (long)rows * (long)Math.Max(1UL, cols);
+            var vals = new float[nElem];
+            int tr = (int)rows, tc = (int)Math.Max(1UL, cols);
+
+            if (name is "model.embed_tokens.weight" or "lm_head.weight")
+            {
+                var srcE = name == "lm_head.weight" ? lmHead : E;
+                for (int r = 0; r < tr; r++)
+                    for (int c = 0; c < tc; c++)
+                        vals[(long)r * tc + c] = (float)srcE[(long)r * dModel + c];
+            }
+            else if (name == "model.norm.weight"
+                     || name.EndsWith("input_layernorm.weight", StringComparison.Ordinal)
+                     || name.EndsWith("post_attention_layernorm.weight", StringComparison.Ordinal))
+                Array.Fill(vals, 1.0f);
+            else if (name.StartsWith("model.layers.", StringComparison.Ordinal))
+            {
+                int layerDot = name.IndexOf('.', "model.layers.".Length);
+                int layerIdx = int.Parse(name["model.layers.".Length..layerDot]);
+                string rest = name[(layerDot + 1)..];
+                var layer = desc.Layers[layerIdx];
+                switch (rest)
+                {
+                    case "self_attn.q_proj.weight":
+                        for (int h = 0; h < nHeads; h++)
+                        {
+                            var key = layer.Heads[h].Key;
+                            if (key == "context" && fAttnL[layerIdx].TryGetValue("context", out var ctxQ) && ctxQ.Rank > 0)
+                                FoundryExport.FillHead(vals, tr, tc, h, headDim, ctxQ, ctxQk);
+                            else if (key == "context")
+                                FoundryExport.FillHeadIdentityScaled(vals, tr, tc, h, headDim, (float)ctxQk);
+                            // rotary-pair-0 skip: content operators stay out of the always-rotating plane
+                            else { double s = OpAttnScale(key); if (s > 0) FoundryExport.FillHead(vals, tr, tc, h, headDim, FoundryExport.HeadFactors(fAttnL[layerIdx][key],layer.Heads,h,FoundryDefaults.DisableRope?headDim-2:headDim), s, skipRotaryPair0: FoundryDefaults.DisableRope); }
+                        }
+                        break;
+                    case "self_attn.k_proj.weight":
+                        for (int h = 0; h < nKv; h++)
+                        {
+                            var key = layer.Heads[h].Key;
+                            if (key == "context" && fAttnL[layerIdx].TryGetValue("context", out var ctxK) && ctxK.Rank > 0)
+                                FoundryExport.FillHeadRight(vals, tr, tc, h, headDim, ctxK, ctxQk);
+                            else if (key == "context")
+                                FoundryExport.FillHeadIdentityScaled(vals, tr, tc, h, headDim, (float)ctxQk);
+                            // same skip mapping as q_proj — Q/K components must stay paired
+                            else { double s = OpAttnScale(key); if (s > 0) FoundryExport.FillHeadRight(vals, tr, tc, h, headDim, FoundryExport.HeadFactors(fAttnL[layerIdx][key],layer.Heads,h,FoundryDefaults.DisableRope?headDim-2:headDim), s, skipRotaryPair0: FoundryDefaults.DisableRope); }
+                        }
+                        break;
+                    case "self_attn.v_proj.weight":
+                        for (int h = 0; h < nKv; h++)
+                        {
+                            var key = layer.Heads[h].Key;
+                            if (key == "context" && fOvL[layerIdx].TryGetValue("context", out var ctxV) && ctxV.Rank > 0)
+                                FoundryExport.FillHeadRight(vals, tr, tc, h, headDim, ctxV, layerScale);
+                            else if (key == "context")
+                                FoundryExport.FillHeadIdentity(vals, tr, tc, h, headDim);
+                            else { double s = OpResidScale(key); if (s > 0) FoundryExport.FillHeadRight(vals, tr, tc, h, headDim, FoundryExport.HeadFactors(fOvL[layerIdx][key],layer.Heads,h,headDim), s); }
+                        }
+                        break;
+                    case "self_attn.o_proj.weight":
+                        for (int h = 0; h < nHeads; h++)
+                        {
+                            var key = layer.Heads[h].Key;
+                            if (key == "context" && fOvL[layerIdx].TryGetValue("context", out var ctxO) && ctxO.Rank > 0)
+                                FoundryExport.FillColsHead(vals, tr, tc, h, headDim, ctxO, layerScale);
+                            else if (key == "context")
+                                FoundryExport.FillColsHeadIdentity(vals, tr, tc, h, headDim);
+                            // Relation rank scales the write-back of non-continuation heads
+                            // only; continuation operators keep unit salience.
+                            else { double s = OpResidScale(key) * (FoundryExport.IsContinuationOperator(key) ? 1.0 : HeadSalience(key)); if (s > 0) FoundryExport.FillColsHead(vals, tr, tc, h, headDim, FoundryExport.HeadFactors(fOvL[layerIdx][key],layer.Heads,h,headDim), s); }
+                        }
+                        break;
+                    // Content-dependent gate: band-block rows keyed on this layer's band
+                    // centroids. upGain = 1/silu(gateZ) makes an aligned token pass ≈1×.
+                    case "mlp.gate_proj.weight": if (OpResidScale(layer.Ffn.Key) > 0) FoundryExport.FillGateBanded(vals, tr, tc, gateCentroids[layerIdx], gateZ, 0.5); break;
+                    case "mlp.up_proj.weight": { double s = OpResidScale(layer.Ffn.Key); if (s > 0) FoundryExport.FillRowsRight(vals, tr, tc, fFfnL[layerIdx][layer.Ffn.Key], s * upGain); } break;
+                    case "mlp.down_proj.weight": { double s = OpResidScale(layer.Ffn.Key); if (s > 0) FoundryExport.FillCols(vals, tr, tc, fFfnL[layerIdx][layer.Ffn.Key], s); } break;
+                    default: SynthInterop.GgufWriterFree(gguf); return Fail($"Mold-A-Model: undefined tensor '{name}'");
+                }
+            }
+            else { SynthInterop.GgufWriterFree(gguf); return Fail($"Mold-A-Model: undefined tensor '{name}'"); }
+
+            byte[] tensorBytes = FoundryExport.ToF32Bytes(vals);
+            tensorReceipts.Add(new {tensor=HfToGgmlName(name),rows=tr,cols=tc,
+                sha256=Convert.ToHexString(SHA256.HashData(tensorBytes)).ToLowerInvariant(),
+                selected_operators=name.Contains("norm.weight") ? new[]{"rmsnorm:ones"}
+                    : name.StartsWith("model.layers.")
+                    ? name.Contains("self_attn.")
+                        ? desc.Layers[int.Parse(name.Split('.')[2])].Heads.Select(h=>h.Key).Distinct().ToArray()
+                        : new[]{desc.Layers[int.Parse(name.Split('.')[2])].Ffn.Key}
+                    : name=="lm_head.weight" ? new[]{desc.LmHead.Key} : opKeys.Prepend(desc.Embed.Key).ToArray()});
+            nuint[] ggufDims = cols > 1 ? [(nuint)cols, (nuint)rows] : [(nuint)rows];
+            unsafe
+            {
+                fixed (nuint* dimsPtr = ggufDims)
+                fixed (byte* dataPtr = tensorBytes)
+                    SynthInterop.GgufWriterAddTensor(gguf, HfToGgmlName(name), 0, dimsPtr, (nuint)ggufDims.Length, dataPtr);
+            }
+        }
+        int rcw = SynthInterop.GgufWriterFinalize(gguf);
+        SynthInterop.GgufWriterFree(gguf);
+        if (rcw != 0) return Fail($"gguf_writer_finalize failed (rc={rcw}) for {outputPath}");
+        if(pathPrograms.TryGetValue(desc.LmHead.Key,out var readoutProgram)) {
+            readoutProgram.WriteReceipt(IntPtr.Zero,outputPath,tokens);
+            File.WriteAllText(outputPath+".tensors.json",System.Text.Json.JsonSerializer.Serialize(tensorReceipts,new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
+            using var recipeDoc=System.Text.Json.JsonDocument.Parse(desc.CanonicalJson);
+            if(recipeDoc.RootElement.TryGetProperty("runtime_calibrator",out var calibrator))
+                await readoutProgram.CalibrateAsync(calibrator.GetString()!,outputPath,vocab,dModel);
+        }
+        MaybeEncryptExportedCartridge(outputPath);
+        long fsz = new FileInfo(outputPath).Length;
+        Stage("lm_head + tensor fill + gguf write");
+        Console.WriteLine($"Mold-A-Model complete: {outputPath} | {desc.Name} L={nLayers} H={nHeads} D={dModel} V={vocab} "
+            + $"({fsz / 1048576.0:F0} MB) in {swTotal.Elapsed.TotalSeconds:F1}s total (tensor write {sw.Elapsed.TotalSeconds:F1}s) — {opKeys.Count} distinct operators, per-head (no tiling)");
+        return 0;
+    }

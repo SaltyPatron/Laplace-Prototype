@@ -11,6 +11,9 @@ A local test bench for the Laplace storage layer (not Laplace-Engine). The resul
 - `chess/order_free.py` — order-free ratings: intrinsic move quality (`intrinsic.py`, Regan & Haworth 2011, from `analyze.py`'s Stockfish MultiPV analysis of games chosen by `select_games.py`) and Whole-History Rating (`whr.py`, Coulom 2008) with stated Elo and intrinsic estimates as separate observation channels, scored against Glicko-2 (`glicko2.py`) on TWIC classical (`pool.py`), with shuffled-order and late-arrival tests
 - `semantics/` — word sense disambiguation by pull (WordNet highway + SemCor witness) on the Raganato et al. framework
 - `code/` — Merkle AST over PostgreSQL and CPython with tree-sitter (exact recomposition, subtree sharing)
+- `models/inspect-gguf.mjs` — inspect a GGUF container, canonical BLAKE3 slot map, duplicate token strings, tensor values, and direct lookup readout; run `node models/inspect-gguf.mjs MODEL REPORT.json`
+- `models/run-prompts.mjs` — run the eight June prompts plus bare-word and case diagnostics in a supplied CPU runtime, retaining exact arguments, output, diagnostics, executable hash and version; run `node models/run-prompts.mjs MODEL CPU_RUNTIME OUTPUT_DIR`
+- `models/README.md` — native CPU construction, complete-vocabulary evaluation and attention/FFN ablation tools for generated model exports
 - `recipes/` — PNG recipe (pixel trees, byte-exact recomposition via preflate), quadtree storage, JPEG coefficient deduplication on COCO
 
 Data lives outside the repository. What each measurement read is recorded with the measurement, under [Research](https://github.com/SaltyPatron/Laplace-Wiki/blob/main/Research/README.md) in Laplace-Wiki.
