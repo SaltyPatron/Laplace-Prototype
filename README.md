@@ -21,8 +21,13 @@ laplace tier0 -u E:\Data\Ingest\UCD -o E:\Data\Laplace\work\tier0\tier0.bin
 The Native owner defines Unicode ordering, CORE-MATH projection, exact fixed-point
 quantization and cache validation. The cache contains 1,112,064 Unicode scalar
 records, sorted by content ID. The removed Python coordinate generators,
-independent prototype ingester/schema and exploratory database scripts are available
-in Git history; they are not deployment or acceptance paths.
+and independent prototype ingester/schema are available in Git history; they are
+superseded by Native, Engine and the production PostgreSQL extension.
+
+Historical experiments in `chess/`, `code/`, `recipes/`, `semantics/`, and the
+Python model/test tools remain research references. Their presence does not imply
+equivalent native implementation or completed acceptance. Gates A/B cover the
+maintained storage and Highway proofs; full-corpus Gate C remains pending.
 
 Local operation uses the host's configured PostgreSQL service. The proof runner
 uses an explicitly named temporary database in an existing cluster; CI or the
