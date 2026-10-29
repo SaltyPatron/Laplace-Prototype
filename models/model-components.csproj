@@ -1,0 +1,29 @@
+<Project InitialTargets="RequireSelectedRuntime">
+  <PropertyGroup>
+    <BaseIntermediateOutputPath Condition="'$(ComponentBuildDir)' != ''">$(ComponentBuildDir)/obj/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath Condition="'$(ComponentBuildDir)' != ''">$(ComponentBuildDir)/obj/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputPath>$(ComponentBuildDir)/managed/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <Target Name="RequireSelectedRuntime" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(LaplaceManagedDir)' == '' Or !Exists('$(LaplaceManagedDir)/Laplace.Decomposers.dll')"
+           Text="LaplaceManagedDir must select the existing production decomposer runtime." />
+    <Error Condition="'$(ComponentBuildDir)' == ''" Text="ComponentBuildDir must select an external build directory." />
+  </Target>
+  <ItemGroup>
+    <Compile Include="model-components.cs" />
+    <Reference Include="$(LaplaceManagedDir)/*.dll" />
+    <None Include="$(LaplaceManagedDir)/*.so*;$(ComponentBuildDir)/liblaplace-model-components.so"
+          Link="%(Filename)%(Extension)" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

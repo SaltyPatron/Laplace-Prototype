@@ -68,3 +68,44 @@ across the selected heads. Projection errors and the final runtime readout error
 measurements, not guarantees of contextual behavior. Provenance is recorded in
 `MODEL.provenance.json`, tensor hashes in `MODEL.tensors.json`, and the runtime solve
 in `MODEL.calibration.json` with full diagnostics in `MODEL.calibration.log`.
+
+## Connected FFN source decomposition
+
+`model-components` exercises the ingestion handoff from the existing production
+tokenizer, SafeTensors parser and shape recognizer into native component calculations.
+The C# adapter holds the source snapshot, passes its open file handles and recognized
+tensor ranges to C++, and resolves the chosen word's identity against PostgreSQL.
+It uses `LlamaTokenizerParser` directly. Model names and tokenizer decoding are
+owned by the selected production runtime.
+
+The native call visits every FFN unit in every recognized layer: the corresponding
+up/gate rows and down column, with the declared activation and optional biases.
+Each layer is calculated independently using the chosen token's source embedding
+as its numerical input. Component effects are summed and compared with the existing
+`ffn_write_vectors_ex_d` complete FFN kernel. The API returns each layer's result
+vector in memory for subsequent calculations; arithmetic and source weights remain
+transient. The receipt reports unit counts, numerical comparison error, working-array
+bytes and time. This check exercises connected-component decoding and calculation.
+
+Build on Linux with the installed production managed/native runtime and an external
+build directory (the C++ compiler must support F16C):
+
+```sh
+cmake -S models -B /path/to/component-build \
+  -DLAPLACE_COMPONENT_ONLY=ON -DCMAKE_BUILD_TYPE=Release \
+  -DLAPLACE_SOURCE_DIR=/path/to/Laplace -DLAPLACE_RUNTIME_DIR=/opt/laplace/lib
+cmake --build /path/to/component-build --target laplace-model-components
+dotnet build models/model-components.csproj -c Release \
+  -p:LaplaceManagedDir=/opt/laplace/app/cli \
+  -p:ComponentBuildDir=/path/to/component-build
+dotnet /path/to/component-build/managed/model-components.dll \
+  /path/to/tier0.bin 'Host=/tmp;Username=laplace;Database=laplace' king \
+  /path/to/TinyLlama/snapshot /path/to/phi-2/snapshot
+```
+
+On hart-server, 2026-10-29, the real TinyLlama and Phi-2 packages supplied 123,904
+and 327,680 connected FFN units respectively. Both tokenizers bound `king` to
+`b25c2d2149dfbb3889de432669062b54`, matching PostgreSQL, at source indexes 9292
+and 3364. Component sums matched the complete native operators within
+5.27e-16 and 5.18e-15 maximum relative error over their layers. These measurements
+use one numerical input per independent layer, with all units participating.
