@@ -284,3 +284,67 @@ coordinates respectively. Maximum relative Q/K/V projection discrepancy was
 within 1.51e-15 relative numerical discrepancy. Changing the positional gap or
 the final V entry changed the calculated output for these inputs. These are
 operator-dependency checks, not semantic similarity or confidence scores.
+
+## Conditional calculation records
+
+`model-records` lowers actual source-component calculations through the ordinary
+Native content and composition APIs, then verifies their PostgreSQL representation.
+It uses both admitted tokenizer results above to select the same 128 distinct
+canonical text operands. For every recognized dense FFN layer in each package,
+the installed production contraction evaluates one bound input against that
+complete declared response scope. No text generation or model endpoint is involved.
+
+The native lowering records this reversible content structure:
+
+```text
+[calculation contract, ordered input condition, relation,
+  ordered [[canonical response entity, canonical decimal fp1e9 grade], ...]]
+```
+
+The existing `Source_Record` type and ordinary Unicode scalar composition carry
+the structure. A `Projection` physicality carries its ranked `TestimonyWalk`.
+The scores are calculated coupling grades, not softmax probabilities or truth
+labels. Source checkpoint, versioned circuit context and calculation qualifier
+remain on a separate `DERIVED_FROM` receipt. Its object is the input condition,
+so an indexed condition/source lookup recovers the calculated records. Neither
+source identity nor source ordinals salt their canonical content identities.
+
+The native call owns text/scalar decomposition, response ordering, composition
+and staging for the whole response scope. The managed driver uses binary COPY
+and set-sized DAG readback. It checks the content pairs against the packed
+grades, replays every result, measures distinct rows after each model and
+compares the resulting entity IDs with the existing monorepo database. It also
+folds a grade read from PostgreSQL through Native Glicko and reports the resulting
+walk tension. This demonstration does not publish that grade as a semantic claim.
+
+Synthetic controls check that a second source reuses content while retaining its
+receipt, a changed grade or input condition changes identity, input order survives,
+candidate enumeration order does not change identity, duplicate candidates and
+out-of-domain grades are refused, and zero/one grades survive storage. Those
+control writes are rolled back to a savepoint before model counts are taken.
+The whole run uses temporary tables shaped like the existing substrate tables
+and rolls back on exit.
+
+Build the same component library as above, then:
+
+```sh
+dotnet build models/model-records.csproj -c Release \
+  -p:LaplaceManagedDir=/opt/laplace/app/cli \
+  -p:ComponentBuildDir=/repos/build/Laplace-Prototype/models
+LAPLACE_TIER0=/repos/work/tier0/tier0.bin \
+LAPLACE_CONNINFO='Host=/tmp;Username=laplace;Database=laplace' \
+LAPLACE_MONO_CONNINFO='Host=/tmp;Username=laplace;Database=laplace-mono' \
+dotnet /repos/build/Laplace-Prototype/models/managed/model-records.dll \
+  /path/to/evidence \
+  /path/to/TinyLlama/snapshot 3a85230c76cb66b7d1e1995951ffc68d \
+  /path/to/Phi-2/snapshot b41f653da86b3483520843eff1287d96
+```
+
+The receipt pins runtime hashes, source snapshot IDs, admitted binding roots,
+the declared calculation contract, distinct/cumulative row counts, source-scoped
+readback plans, record-lowering time and database verification/replay time.
+Each result describes that explicit calculation scope. The count of resulting
+records is not a count of learned functions in the complete checkpoint; the
+prototype neither replaces full model decomposition nor runs the connected
+contextual model graph. Requiring two packages here exercises cross-source
+identity in one test; it is not an ingestion admission rule.

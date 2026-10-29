@@ -9,10 +9,11 @@ set(LAPLACE_RUNTIME_DIR "/opt/laplace/lib" CACHE PATH "Other Laplace runtime dep
 option(LAPLACE_COMPONENT_ONLY "Build the connected model-component calculation" OFF)
 if(LAPLACE_COMPONENT_ONLY)
   find_library(DYNAMICS_LIBRARY NAMES laplace_dynamics PATHS ${LAPLACE_RUNTIME_DIR} NO_DEFAULT_PATH REQUIRED)
-  add_library(laplace-model-components SHARED model-components.cpp)
+  find_library(CORE_LIBRARY NAMES laplace_core PATHS ${LAPLACE_RUNTIME_DIR} NO_DEFAULT_PATH REQUIRED)
+  add_library(laplace-model-components SHARED model-components.cpp model-records.cpp)
   target_include_directories(laplace-model-components PRIVATE ${LAPLACE_SOURCE_DIR}/engine/dynamics/include
     ${LAPLACE_SOURCE_DIR}/engine/core/include)
-  target_link_libraries(laplace-model-components PRIVATE ${DYNAMICS_LIBRARY})
+  target_link_libraries(laplace-model-components PRIVATE ${DYNAMICS_LIBRARY} ${CORE_LIBRARY})
   target_compile_options(laplace-model-components PRIVATE -O3 -mf16c -ffp-contract=off -fno-fast-math)
   set_target_properties(laplace-model-components PROPERTIES BUILD_RPATH "${LAPLACE_RUNTIME_DIR}")
   return()
