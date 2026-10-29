@@ -69,6 +69,42 @@ measurements, not guarantees of contextual behavior. Provenance is recorded in
 `MODEL.provenance.json`, tensor hashes in `MODEL.tensors.json`, and the runtime solve
 in `MODEL.calibration.json` with full diagnostics in `MODEL.calibration.log`.
 
+## Tokenizer source admission before numeric extraction
+
+`verify-tokenizer-source.mjs` runs the existing Native Engine on the selected
+packages' `tokenizer.json` files, reconstructs them from PostgreSQL through the
+existing MCP `file_outline` operation, compares the complete bytes and SHA-256,
+and repeats admission to check that both recorded file trunks are skipped with
+zero new entity/path rows. It writes a bounded receipt and the Engine's logs to
+the selected external destination. Connection credentials are not recorded.
+
+```sh
+LAPLACE_CONNINFO='host=/tmp user=laplace dbname=laplace' \
+LAPLACE_RECIPES=/hosting/laplace/modular/current/share/recipes \
+node models/verify-tokenizer-source.mjs \
+  /hosting/laplace/modular/current/bin/laplace \
+  /hosting/laplace/modular/current/bin/lpm \
+  /repos/work/tier0/tier0.bin \
+  /repos/archive/laplace/tokenizer-source-check.json \
+  /path/to/TinyLlama/snapshot /path/to/phi-2/snapshot
+```
+
+This is the source-structure admission step. The existing JSON grammar retains
+vocabulary members/indexes, added-token records, merge order and decoder syntax
+in shared canonical compositions under the file's metadata/content trunk.
+The check implements no tokenizer decoder or model arithmetic. Decoded-piece
+bindings, their applicable source conditions, model-trunk integration and learned
+effects are subsequent handoffs; this receipt does not establish those handoffs.
+The vocabulary counts describe source IDs, not distinct canonical text identities.
+
+The real TinyLlama and Phi-2 tokenizer sources were admitted together on
+2026-10-29 in 39.9 seconds: 1,842,767 and 2,114,924 bytes, with 32,000 and 50,295
+distinct source token IDs respectively. Phi includes 38 added-only IDs. Independent
+MCP reconstruction matched both files byte for byte. The immediate Engine replay
+skipped both inputs in 1.3 seconds with zero new entity/path rows. These timings
+are for tokenizer source structure, not complete model ETL. The original admission,
+readback and replay receipts are under `/repos/archive/laplace/` on hart-server.
+
 ## Connected source-component calculations
 
 `model-components` exercises the ingestion handoff from the existing production
