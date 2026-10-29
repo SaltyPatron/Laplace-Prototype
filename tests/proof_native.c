@@ -116,8 +116,35 @@ static void cache(const lp_tier0_record *tier0,const char *path){
     printf("highway: %zu identifiers, %zu edges, %zu 64-bit banks; BLAKE3 %s\n",count,edges,h->nbanks,hex);
     lp_text_free(text);
 }
+static void compare_highways(const char *before,const char *after){
+    const lp_highway *a=lp_highway_map(before),*b=lp_highway_map(after);
+    require(a && b,"both Highway artifacts map through Native");
+    size_t shared=0,changed=0,removed=0,added=0;
+    for(size_t l=0;l<a->nlists;l++){
+        const lp_list *old=a->list+l,*next=lp_highway_list(b,old->name);
+        if(!next || next->count!=old->count)printf("list %s: %u -> %u slots\n",old->name,old->count,next?next->count:0);
+        for(uint32_t slot=0;slot<old->count;slot++){
+            const lp_tier0_record *r=lp_highway_at(a,old,slot);if(!r)continue;
+            const lp_tier0_record *s=lp_highway_find(b,&r->id);
+            if(!s){printf("removed %s[%u]: %s\n",old->name,slot,lp_highway_identifier(a,old,slot));removed++;continue;}
+            shared++;
+            if(memcmp(r->m,s->m,sizeof r->m) || r->hilbert!=s->hilbert){printf("changed geometry %s[%u]\n",old->name,slot);changed++;}
+        }
+    }
+    for(size_t l=0;l<b->nlists;l++)for(uint32_t slot=0;slot<b->list[l].count;slot++){
+        const lp_tier0_record *r=lp_highway_at(b,b->list+l,slot);
+        if(r && !lp_highway_find(a,&r->id)){printf("added %s[%u]: %s\n",b->list[l].name,slot,lp_highway_identifier(b,b->list+l,slot));added++;}
+    }
+    for(size_t i=0;i<a->nbanks;i++){
+        const lp_bank *x=a->bank+i,*y=lp_highway_bank(b,x->name);
+        require(y && x->offset==y->offset && x->width==y->width && x->flags==y->flags && !strcmp(x->list->name,y->list->name),"existing mask bank layout is preserved");
+    }
+    printf("Highway comparison: %zu shared, %zu changed geometries, %zu removed, %zu added; edges %zu -> %zu\n",shared,changed,removed,added,a->nedges,b->nedges);
+    require(!changed && !removed,"existing canonical Highway identities and geometry are preserved");
+}
 int main(int argc,char **argv){
-    require(argc==4,"usage: proof_native cache|database TIER0 HIGHWAY|CONNINFO");
+    require(argc==4,"usage: proof_native cache|database TIER0 HIGHWAY|CONNINFO; compare OLD_HIGHWAY NEW_HIGHWAY");
+    if(!strcmp(argv[1],"compare")){compare_highways(argv[2],argv[3]);return 0;}
     const lp_tier0_record *tier0=lp_tier0_map(argv[2]); require(tier0!=NULL,"canonical scalar Tier-0 cache");
     FILE *f=fopen(argv[2],"rb"); require(f!=NULL,"Tier-0 file"); require(!fseek(f,0,SEEK_END),"Tier-0 size");
     require(ftell(f)==(long)((size_t)LP_TIER0_COUNT*sizeof *tier0) && LP_TIER0_COUNT==1112064,"1,112,064 scalar records"); fclose(f);

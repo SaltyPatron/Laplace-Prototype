@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$NativeProof,
     [Parameter(Mandatory)][string]$Tier0,
     [Parameter(Mandatory)][string]$Highway,
+    [Parameter(Mandatory)][string]$Manifest,
     [Parameter(Mandatory)][string]$ConnInfo,
     [Parameter(Mandatory)][string]$Scratch,
     [Parameter(Mandatory)][string]$Formats,
@@ -12,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Path $Scratch -Force | Out-Null
 $Scratch = (Resolve-Path -LiteralPath $Scratch).Path
 $prior = @{}
-foreach ($name in @('LAPLACE_TIER0','LAPLACE_HIGHWAY','LAPLACE_CONNINFO','LAPLACE_INGEST_ONE','LAPLACE_TRUNKS','LAPLACE_RECIPES','LAPLACE_PROOF_DATA','LAPLACE_DATA')) {
+foreach ($name in @('LAPLACE_TIER0','LAPLACE_HIGHWAY','LAPLACE_MANIFEST','LAPLACE_CONNINFO','LAPLACE_INGEST_ONE','LAPLACE_TRUNKS','LAPLACE_RECIPES','LAPLACE_PROOF_DATA','LAPLACE_DATA')) {
     $prior[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 function Invoke-Proof([string]$File, [string[]]$Arguments, [string]$Name) {
@@ -37,6 +38,8 @@ function Test-Refusal([string]$Path, [string]$Name) {
     if (!$code -or $text -notmatch 'rejected before database access') { throw "$Name did not reject the invalid artifact before connecting" }
 }
 try {
+    if(-not [IO.Path]::IsPathFullyQualified($Manifest) -or -not(Test-Path -LiteralPath (Join-Path $Manifest 'banks.tsv') -PathType Leaf)){throw 'Use the frozen Native manifest directory belonging to the candidate package.'}
+    $env:LAPLACE_MANIFEST=$Manifest
     $env:LAPLACE_TIER0=$Tier0; $env:LAPLACE_HIGHWAY=$Highway; $env:LAPLACE_CONNINFO=$ConnInfo
     $env:LAPLACE_INGEST_ONE='1'; $env:LAPLACE_TRUNKS='1'
     $db=Read-Sql 'SELECT current_database()'

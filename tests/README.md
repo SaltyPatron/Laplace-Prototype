@@ -9,7 +9,9 @@ On Windows, load `Laplace-Operations/laplace.env.ps1` and `$env:LAPLACE_DEVSHELL
 before CMake, and put the candidate Native DLL directory on `PATH`.
 
 Run `tests/run-proofs.ps1` with `-Engine`, `-NativeProof`, `-Tier0`, `-Highway`,
-`-Formats`, `-ConnInfo`, `-Psql`, and `-Scratch`. `-Formats` points at the canonical
+`-Manifest`, `-Formats`, `-ConnInfo`, `-Psql`, and `-Scratch`. `-Manifest` selects
+the candidate package's frozen Native manifests; it never reads the builder's
+mutable checkout by default. `-Formats` points at the canonical
 Engine `recipes/formats` directory. The database must use the same candidate
 Tier-0 and Highway paths in its `laplace.tier0` and `laplace.highway` settings.
 The Windows fixture proof also uses `LAPLACE_GRAMMARS` from the Engine build.
@@ -21,6 +23,10 @@ standings and zero-write file-trunk dedupe. Gate B rebuilds with absent corpus
 and recipe roots, verifies all canonical slots and CSR endpoints, checks real
 connectivity across the eight namespaces, and rejects corrupt/missing artifacts
 before database access. There is no timing or multi-corpus performance gate.
+
+`proof_native compare OLD_HIGHWAY NEW_HIGHWAY` checks existing canonical IDs,
+coordinates, Hilbert values and mask bank layouts through Native's mapped cache
+API. It reports added/removed identifiers and does not approve changed geometry.
 
 Gate C remains the Sprint 3 full-corpus qualification. Historical exploratory
 scripts are not used as acceptance checks by this entry point.
