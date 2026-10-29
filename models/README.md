@@ -105,6 +105,51 @@ skipped both inputs in 1.3 seconds with zero new entity/path rows. These timings
 are for tokenizer source structure, not complete model ETL. The original admission,
 readback and replay receipts are under `/repos/archive/laplace/` on hart-server.
 
+## Decoded tokenizer overlap
+
+`tokenizer-overlap` compares both complete source vocabularies, including added
+IDs. Hugging Face's pinned Rust tokenizer executes the declared decoders. A strict
+byte check matches every complete UTF-8 piece against that decoder and keeps
+incomplete byte fragments separate instead of merging replacement characters.
+The receiver initializes the ordinary Native codepoint perf-cache, uses Native
+canonical content IDs and UAX segmentation, and applies NFC with case preserved.
+The whitespace-neutral comparison is a comparison view; exact decoded pieces
+and source indexes remain available independently. Special-role pieces and empty
+whitespace-only results are excluded from the neutral and UAX comparisons.
+
+```sh
+RUSTFLAGS='-Lnative=/opt/laplace/app/cli -Clink-arg=-Wl,-rpath,/opt/laplace/app/cli' \
+cargo build --release --locked --jobs 2 \
+  --manifest-path models/tokenizer-overlap/Cargo.toml \
+  --target-dir /repos/build/Laplace-Prototype/models/tokenizer-overlap
+LAPLACE_TIER0=/repos/work/tier0/tier0.bin \
+/repos/build/Laplace-Prototype/models/tokenizer-overlap/release/laplace-tokenizer-overlap \
+  /path/to/TinyLlama/snapshot/tokenizer.json \
+  /path/to/phi-2/snapshot/tokenizer.json \
+  /repos/archive/laplace/tokenizer-overlap.json
+```
+
+The observed decoder contracts currently qualified here are TinyLlama's
+Replace/ByteFallback/Fuse/Strip sequence and Phi's ByteLevel decoder. This is a
+read-only comparison consumer; it does not replace production ingestion or
+enumerate the text that could be assembled across arbitrary token sequences.
+
+Real-source runs on 2026-10-29, 1.27–1.50 seconds including Native cache initialization:
+
+| Comparison | TinyLlama distinct | Phi-2 distinct | Shared |
+| --- | ---: | ---: | ---: |
+| Original source spellings | 32,000 | 50,295 | 7,263 |
+| Exact decoded bytes, including byte fragments | 31,904 | 50,295 | 18,222 |
+| NFC text, surrounding whitespace removed, excluding special/empty pieces | 26,457 | 41,400 | 14,745 |
+| Native UAX segments containing letters/numbers, including subword fragments | 25,228 | 40,626 | 14,238 |
+
+The neutral text union is 53,112 distinct pieces. Shared pieces are 55.73% of
+TinyLlama's distinct neutral pieces and 35.62% of Phi's. Incomplete/invalid UTF-8
+sequences are tracked separately: 128 distinct in TinyLlama, 344 in Phi, 128
+shared. These counts describe represented content and fragments, not learned
+semantic agreement or the final number of admitted DAG nodes. Receipt:
+`/repos/archive/laplace/tiny-phi-tokenizer-overlap-recorded-20261029.json`.
+
 ## Connected source-component calculations
 
 `model-components` exercises the ingestion handoff from the existing production
