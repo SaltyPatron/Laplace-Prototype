@@ -55,6 +55,24 @@ static class Program {
         byte[] tokenizer=snapshot.Read(Path.Combine(path,"tokenizer.json"),Read);
         var config=ModelConfigReader.Read(snapshot.Read(Path.Combine(path,"config.json"),Read));
         var manifest=ModelManifest.Recognize(headers,config,LlamaTokenizerParser.IdSpace(tokenizer),path);
+        var bound=manifest.Roles.SelectMany(r=>r.Bias is null?new[]{r.Name}:new[]{r.Name,r.Bias})
+            .ToHashSet(StringComparer.Ordinal);
+        var unbound=headers.Where(t=>!bound.Contains(t.Name)).Select(t=>t.Name).ToArray();
+        if(unbound.Length!=0 || manifest.Anatomy.Conflicts.Count!=0 ||
+           manifest.Anatomy.Operators.Any(o=>o.Slots.Any(s=>s.IsAmbiguous)))
+            throw new InvalidDataException("source anatomy incomplete: "+string.Join(",",unbound.Concat(manifest.Anatomy.Conflicts)));
+        Console.WriteLine($"source_structure_bound_tensors={bound.Count} source_total_tensors={headers.Count}");
+        foreach(var family in manifest.Roles.GroupBy(r=>r.Kind switch {
+            TensorRoleKind.AttnQ or TensorRoleKind.AttnK or TensorRoleKind.AttnV or TensorRoleKind.AttnO or TensorRoleKind.AttnQkv=>"attention",
+            TensorRoleKind.MlpUp or TensorRoleKind.MlpDown or TensorRoleKind.MlpGate or TensorRoleKind.MlpGateUp=>"ffn",
+            TensorRoleKind.Norm=>"normalization",
+            TensorRoleKind.Embedding or TensorRoleKind.LmHead=>"vocabulary",
+            _=>r.Kind.ToString()
+        })) {
+            int count=family.SelectMany(r=>r.Bias is null?new[]{r.Name}:new[]{r.Name,r.Bias})
+                .Distinct(StringComparer.Ordinal).Count();
+            Console.WriteLine($"source_tensor_family={family.Key} tensor_count_including_bias={count} component_calculation={(family.Key=="ffn"?"connected-units":"source-binding")}");
+        }
         var tokens=LlamaTokenizerParser.Parse(tokenizer);
         byte[] wanted=Encoding.UTF8.GetBytes(word);
         var token=tokens.FirstOrDefault(t=>t.CanonicalBytes.AsSpan().SequenceEqual(wanted))

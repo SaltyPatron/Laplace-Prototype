@@ -77,6 +77,12 @@ The C# adapter holds the source snapshot, passes its open file handles and recog
 tensor ranges to C++, and resolves the chosen word's identity against PostgreSQL.
 It uses `LlamaTokenizerParser` directly. Model names and tokenizer decoding are
 owned by the selected production runtime.
+Before running the FFN calculation it checks every source tensor against the
+recognized roles and biases, and reports attention, FFN, normalization and
+vocabulary bindings separately. Unbound tensors, ambiguous slots or conflicting
+anatomy stop the run. Tensor-binding coverage and calculated FFN effects have
+distinct receipt fields; sequence/position, masking and residual wiring also
+belong to the complete model execution contract.
 
 The native call visits every FFN unit in every recognized layer: the corresponding
 up/gate rows and down column, with the declared activation and optional biases.
