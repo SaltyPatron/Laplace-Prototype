@@ -105,9 +105,50 @@ skipped both inputs in 1.3 seconds with zero new entity/path rows. These timings
 are for tokenizer source structure, not complete model ETL. The original admission,
 readback and replay receipts are under `/repos/archive/laplace/` on hart-server.
 
-## Decoded tokenizer overlap
+## Decoded tokenizer admission and overlap
 
-`tokenizer-overlap` compares both complete source vocabularies, including added
+The provider admits its complete decoded vocabulary with `--admit`. It verifies
+the original tokenizer file's persisted content against the input, then uses the
+existing Core `canonical_stage` API for composition, top-down presence descent
+and paired binary COPY. PostgreSQL's existing `laplace_merge_stage` performs
+publication. Caller-owned UNLOGGED inputs use the normal `stage` schema and are
+dropped before commit; failures roll back their creation. No per-token SQL
+transport or private durable schema is introduced.
+
+The result has four ordered constituents: the original tokenizer file trunk,
+the canonical `NFC` policy, the raw vocabulary and the decoded vocabulary. Each
+vocabulary's logical ordinal is its source index, including repeats. Leading
+spaces and case remain in decoded content; the source tree retains decoder,
+merge, control and boundary conditions. Incomplete UTF-8 pieces have
+`[Byte, ordered canonical decimal byte values]` descriptors, using ordinary
+Unicode content instead of another Tier-0 alphabet or a replacement character.
+This result is a tokenizer branch for the later complete model trunk. Recording
+it registers no separate model witness and creates no learned semantic claims.
+
+```sh
+LAPLACE_TIER0=/repos/work/tier0/tier0.bin \
+LAPLACE_CONNINFO='host=/tmp user=laplace dbname=laplace' \
+/repos/build/Laplace-Prototype/models/tokenizer-overlap/release/laplace-tokenizer-overlap \
+  --admit /path/to/snapshot/tokenizer.json PERSISTED_TOKENIZER_FILE_ID \
+  /repos/archive/laplace/tokenizer-bindings.json
+```
+
+Real admissions on 2026-10-29 verified every raw and decoded ordinal before commit:
+
+| Model | Source indexes | New entity/path pairs | Admission seconds | Replay new pairs |
+| --- | ---: | ---: | ---: | ---: |
+| TinyLlama | 32,000 | 16,316 | 9.516 | 0 |
+| Phi-2 | 50,295 | 22,902 | 12.207 | 0 |
+
+Each initial admission used 19 SQL commands and 4 Native presence rounds; each
+replay used 8 commands and one root presence round. PostgreSQL confirms 18,222
+shared entries between the decoded manifests (31,898 and 50,295 distinct IDs,
+including byte descriptors). Result roots are
+`3a85230c76cb66b7d1e1995951ffc68d` and
+`b41f653da86b3483520843eff1287d96`. Initial and replay receipts are
+`/repos/archive/laplace/{tiny,phi}-tokenizer-bindings[-replay]-20261029.json`.
+
+Without `--admit`, `tokenizer-overlap` compares both complete source vocabularies, including added
 IDs. Hugging Face's pinned Rust tokenizer executes the declared decoders. A strict
 byte check matches every complete UTF-8 piece against that decoder and keeps
 incomplete byte fragments separate instead of merging replacement characters.
@@ -130,8 +171,8 @@ LAPLACE_TIER0=/repos/work/tier0/tier0.bin \
 ```
 
 The observed decoder contracts currently qualified here are TinyLlama's
-Replace/ByteFallback/Fuse/Strip sequence and Phi's ByteLevel decoder. This is a
-read-only comparison consumer; it does not replace production ingestion or
+Replace/ByteFallback/Fuse/Strip sequence and Phi's ByteLevel decoder. Comparison
+mode is read-only; it does not replace production ingestion or
 enumerate the text that could be assembled across arbitrary token sequences.
 
 Real-source runs on 2026-10-29, 1.27–1.50 seconds including Native cache initialization:
@@ -152,12 +193,15 @@ semantic agreement or the final number of admitted DAG nodes. Receipt:
 
 ## Connected source-component calculations
 
-`model-components` exercises the ingestion handoff from the existing production
-tokenizer, SafeTensors parser and shape recognizer into native component calculations.
+`model-components` exercises the ingestion handoff from admitted PostgreSQL
+tokenizer bindings and the production SafeTensors parser/shape recognizer into
+native component calculations.
 The C# adapter holds the source snapshot, passes its open file handles and recognized
 tensor ranges to C++, and resolves the chosen word's identity against PostgreSQL.
-It uses `LlamaTokenizerParser` directly. Model names and tokenizer decoding are
-owned by the selected production runtime.
+It reads the qualified ordered vocabulary from PostgreSQL and verifies the source
+against the held package. The spelling-heuristic parsing fallback is removed from
+this consumer. `LlamaTokenizerParser.IdSpace` checks source index cardinality only;
+tensor roles remain owned by the selected production runtime.
 Before running the FFN calculation it checks every source tensor against the
 recognized roles and biases, and reports attention, FFN, normalization and
 vocabulary bindings separately. Unbound tensors, ambiguous slots or conflicting
@@ -165,9 +209,10 @@ anatomy stop the run. Tensor-binding coverage and calculated FFN effects have
 distinct receipt fields; sequence/position, masking and residual wiring also
 belong to the complete model execution contract.
 
-Supply comma-separated canonical words, such as `king,queen`, to include attention.
-The adapter retains the tokenizer's source pieces and resolves contained words with
-the existing Native UAX `TextDecomposer.WordSegments`. For example, `queen` is a
+Supply comma-separated canonical operands, such as `king,queen`, to include attention.
+Native `lp_path_expand` reads stored ordinals, including repeated IDs. Indexed
+membership reduces to candidate pieces within that admitted vocabulary before
+Native UAX `TextDecomposer.WordSegments` resolves constituents. For example, `queen` is a
 constituent of the space-prefixed piece; that piece keeps its own content root,
 source index and decoded-content byte offset. This uses containment instead of discarding the space
 or requiring the entire tokenizer piece to equal the requested word.
@@ -213,8 +258,16 @@ dotnet build models/model-components.csproj -c Release \
   -p:ComponentBuildDir=/path/to/component-build
 dotnet /path/to/component-build/managed/model-components.dll \
   /path/to/tier0.bin 'Host=/tmp;Username=laplace;Database=laplace' king,queen \
-  /path/to/TinyLlama/snapshot /path/to/phi-2/snapshot
+  --binding-root 3a85230c76cb66b7d1e1995951ffc68d /path/to/TinyLlama/snapshot
 ```
+
+Use Phi's own result root and package for its component check. With `--bindings
+ROOT` instead of `--binding-root ROOT PACKAGE`, the reader resolves source indexes
+wholly from PostgreSQL, with no model source files opened. These operands select
+concrete source rows for component checks; complete source-sequence encoding has
+its own boundary/context contract. Real `king,queen` checks selected Tiny indexes
+9292/26624 and Phi3364/16599 from the admitted manifests; the existing numerical
+reference results were unchanged.
 
 On hart-server, 2026-10-29, the real TinyLlama and Phi-2 packages supplied 123,904
 and 327,680 connected FFN units respectively. Both tokenizers bound `king` to

@@ -8,8 +8,10 @@ use std::{
 use tokenizers::Tokenizer;
 use unicode_normalization::UnicodeNormalization;
 
+mod admission;
+
 #[repr(C)]
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Default, Eq, PartialEq, Hash)]
 struct Id([u64; 2]);
 
 #[link(name = "laplace_core")]
@@ -111,6 +113,15 @@ struct Views {
     lexical: HashSet<Id>,
     surfaces: BTreeMap<String, Vec<u32>>,
     summary: Value,
+    source_bytes: Vec<u8>,
+    pieces: Vec<Piece>,
+}
+
+struct Piece {
+    index: u32,
+    raw: String,
+    bytes: Vec<u8>,
+    text: Option<String>,
 }
 
 fn model(path: &str, alphabet: &HashMap<char, u8>) -> Result<Views, Error> {
@@ -167,10 +178,15 @@ fn model(path: &str, alphabet: &HashMap<char, u8>) -> Result<Views, Error> {
     if by_id.keys().copied().collect::<HashSet<_>>() != expected {
         return Err("provider omitted source IDs".into());
     }
-    let anchor = tokenizer
-        .token_to_id("king")
-        .ok_or("source lacks the declared valid codec prefix")?;
-    let prefix = tokenizer.decode(&[anchor], false)?;
+    let mut codec_prefix = None;
+    for &index in by_id.keys() {
+        let decoded = tokenizer.decode(&[index], false)?;
+        if !decoded.is_empty() && !decoded.contains('\u{fffd}') {
+            codec_prefix = Some((index, decoded));
+            break;
+        }
+    }
+    let (anchor, prefix) = codec_prefix.ok_or("source has no complete codec prefix")?;
     let mut result = Views::default();
     let (mut invalid_tokens, mut special_tokens, mut whitespace_tokens, mut checked) = (0, 0, 0, 0);
     let mut normalization_changes = 0;
@@ -196,6 +212,12 @@ fn model(path: &str, alphabet: &HashMap<char, u8>) -> Result<Views, Error> {
             .strip_prefix(&prefix)
             .ok_or("decoder changed the codec prefix")?;
         let Ok(text) = std::str::from_utf8(&bytes) else {
+            result.pieces.push(Piece {
+                index: *id,
+                raw: raw.clone(),
+                bytes: bytes.clone(),
+                text: None,
+            });
             invalid_tokens += 1;
             result.fragments.insert(bytes.clone());
             if !decoded.contains('\u{fffd}') {
@@ -213,6 +235,12 @@ fn model(path: &str, alphabet: &HashMap<char, u8>) -> Result<Views, Error> {
         }
         checked += 1;
         let nfc: String = text.nfc().collect();
+        result.pieces.push(Piece {
+            index: *id,
+            raw: raw.clone(),
+            bytes: bytes.clone(),
+            text: Some(nfc.clone()),
+        });
         if nfc != text {
             normalization_changes += 1;
         }
@@ -249,10 +277,11 @@ fn model(path: &str, alphabet: &HashMap<char, u8>) -> Result<Views, Error> {
         result.uax.extend(segments.all);
         result.lexical.extend(segments.lexical);
     }
-    result.summary = json!({"path":path,"sourceTokenIds":by_id.len(),"completeSourceIdCoverage":true,"specialTokenIds":special_tokens,
+    result.summary = json!({"path":path,"sourceTokenIds":by_id.len(),"completeSourceIdCoverage":true,"specialTokenIds":special_tokens,"codecPrefixSourceIndex":anchor,
         "validUtf8TokensCheckedAgainstProvider":checked,"incompleteOrInvalidUtf8TokenIds":invalid_tokens,
         "distinctIncompleteOrInvalidByteSequences":result.fragments.len(),"whitespaceOnlyNonSpecialIds":whitespace_tokens,
         "nfcChangedTokenIds":normalization_changes,"fragmentExamples":fragment_examples,"decoder":decoder});
+    result.source_bytes = input;
     Ok(result)
 }
 
@@ -269,9 +298,10 @@ fn metric<T: Eq + std::hash::Hash>(a: &HashSet<T>, b: &HashSet<T>) -> Value {
 fn main() -> Result<(), Error> {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 4 {
+    let admitting = args.get(1).is_some_and(|arg| arg == "--admit");
+    if (admitting && args.len() != 5) || (!admitting && args.len() != 4) {
         return Err(
-            "usage: laplace-tokenizer-overlap TINY_TOKENIZER PHI_TOKENIZER RECEIPT.json".into(),
+            "usage: laplace-tokenizer-overlap TINY_TOKENIZER PHI_TOKENIZER RECEIPT.json; or --admit TOKENIZER SOURCE_FILE_ID RECEIPT.json".into(),
         );
     }
     let floor = CString::new(std::env::var("LAPLACE_TIER0")?)?;
@@ -280,6 +310,10 @@ fn main() -> Result<(), Error> {
         return Err(format!("canonical Native perfcache load rc={rc}").into());
     }
     let alphabet = byte_alphabet();
+    if admitting {
+        let source = model(&args[2], &alphabet)?;
+        return admission::run(&source, &args[3], &args[4]);
+    }
     let tiny = model(&args[1], &alphabet)?;
     let phi = model(&args[2], &alphabet)?;
     let probes: Vec<_> = ["king","queen","some","thing","something","ing","bringing","singing","£","é","_","Paris"]
