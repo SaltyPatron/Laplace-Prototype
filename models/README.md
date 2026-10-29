@@ -69,7 +69,7 @@ measurements, not guarantees of contextual behavior. Provenance is recorded in
 `MODEL.provenance.json`, tensor hashes in `MODEL.tensors.json`, and the runtime solve
 in `MODEL.calibration.json` with full diagnostics in `MODEL.calibration.log`.
 
-## Connected FFN source decomposition
+## Connected source-component calculations
 
 `model-components` exercises the ingestion handoff from the existing production
 tokenizer, SafeTensors parser and shape recognizer into native component calculations.
@@ -83,6 +83,32 @@ vocabulary bindings separately. Unbound tensors, ambiguous slots or conflicting
 anatomy stop the run. Tensor-binding coverage and calculated FFN effects have
 distinct receipt fields; sequence/position, masking and residual wiring also
 belong to the complete model execution contract.
+
+Supply comma-separated canonical words, such as `king,queen`, to include attention.
+The adapter retains the tokenizer's source pieces and resolves contained words with
+the existing Native UAX `TextDecomposer.WordSegments`. For example, `queen` is a
+constituent of the space-prefixed piece; that piece keeps its own content root,
+source index and decoded-content byte offset. This uses containment instead of discarding the space
+or requiring the entire tokenizer piece to equal the requested word.
+
+The Native attention calculation applies the source input norm (RMSNorm or
+LayerNorm), Q/K/V projections and biases, full or partial RoPE, scaled causal
+softmax, shared-KV value selection, the per-head O-column contributions and output
+bias, and adds the residual input. Q/K/V row calculations are compared with the
+existing bulk Native projection; summed O contributions are compared with a whole
+projection of concatenated attended values. Prefix invariance and controlled
+position/value changes exercise the context dependencies. Current supported source
+options are the unscaled causal RoPE layouts without separate Q/K normalization
+used by the selected TinyLlama and Phi-2 packages. The source-bound formula follows
+the [Phi reference implementation](https://github.com/huggingface/transformers/blob/v4.37.0/src/transformers/models/phi/modeling_phi.py).
+Numerical comparisons use F64 working arithmetic over the source F16/BF16 values.
+
+Each attention layer is checked independently on the selected source embedding
+rows. Its returned `input + attention` state is an intermediate result available
+to further Native calculations. The FFN calculation remains a separate component
+check. The source architecture determines how these branches, subsequent norms
+and readout connect; these component checks do not execute that complete model
+graph or publish its semantic evidence.
 
 The native call visits every FFN unit in every recognized layer: the corresponding
 up/gate rows and down column, with the declared activation and optional biases.
@@ -105,7 +131,7 @@ dotnet build models/model-components.csproj -c Release \
   -p:LaplaceManagedDir=/opt/laplace/app/cli \
   -p:ComponentBuildDir=/path/to/component-build
 dotnet /path/to/component-build/managed/model-components.dll \
-  /path/to/tier0.bin 'Host=/tmp;Username=laplace;Database=laplace' king \
+  /path/to/tier0.bin 'Host=/tmp;Username=laplace;Database=laplace' king,queen \
   /path/to/TinyLlama/snapshot /path/to/phi-2/snapshot
 ```
 
@@ -115,3 +141,12 @@ and 327,680 connected FFN units respectively. Both tokenizers bound `king` to
 and 3364. Component sums matched the complete native operators within
 5.27e-16 and 5.18e-15 maximum relative error over their layers. These measurements
 use one numerical input per independent layer, with all units participating.
+
+The two-entry attention checks ran in both `king,queen` and `queen,king` order.
+They covered 704 query-head routes sharing 88 KV pairs in TinyLlama and 1,024
+routes/KV pairs in Phi. Source head widths were 64/80, with 64/32 rotary
+coordinates respectively. Maximum relative Q/K/V projection discrepancy was
+2.19e-15, and head-sum discrepancy 1.30e-15. The causal prefix remained invariant
+within 1.51e-15 relative numerical discrepancy. Changing the positional gap or
+the final V entry changed the calculated output for these inputs. These are
+operator-dependency checks, not semantic similarity or confidence scores.
