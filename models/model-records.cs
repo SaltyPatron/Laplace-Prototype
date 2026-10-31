@@ -13,7 +13,7 @@ using Laplace.SubstrateCRUD;
 using Npgsql;
 
 // Executable calculation-to-record proof. Source components are evaluated, not
-// prompted for answers. This deliberately does not claim complete model ETL.
+// prompted for answers.
 static class ModelRecords
 {
     const BindingFlags Methods=BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance|BindingFlags.Static;
