@@ -1,3 +1,0 @@
-name raw-conllu
-match *.conllu
-grammar conllu

@@ -1,0 +1,37 @@
+{
+  "purpose": "Lossless archival checkpoint of local commit history; no implementation is integrated or validated by this archive.",
+  "repository": "Laplace-Prototype",
+  "created_utc": "2026-10-31T04:58:28.961423+00:00",
+  "main_before_archive": "768d40384fecee268bc7fe6681dcb7b0a38ce432",
+  "original_local_branches": [
+    [
+      "refs/heads/main",
+      "768d40384fecee268bc7fe6681dcb7b0a38ce432",
+      "origin/main"
+    ]
+  ],
+  "preserved_commit_count": 12,
+  "preserved_commits": [
+    "051c693076d76fa4df9db94017dec16d76d5d47d",
+    "32a2566f3fdaa34e20b40b0f42706c885e3590ed",
+    "524aab49f36bf9369f5256290287c2ab5f901d94",
+    "5b84c660c091f922ab65d8ec5265ccddfbb94ee2",
+    "6692f0771d7dfd8322ebc9076a0a5c20ffdf7634",
+    "6b5567ee72a5b49eb9d4466a544126150ce3c27c",
+    "86ce54a30564adc26e5a87937d0ec7eaedfa7ed7",
+    "aec5c35a307831224efaac6f84162e153a1841c0",
+    "c1c7196215f7621c223eae24027fe055d5e3a382",
+    "c870548fac92db9b6cdf851fd5a3735cea3c2304",
+    "cec686054a5adaf9f9796d284f8ed8e78b9795f7",
+    "ec7906f7f65f211c674105559785422c2d140869"
+  ],
+  "preserved_tips": [
+    "051c693076d76fa4df9db94017dec16d76d5d47d",
+    "5b84c660c091f922ab65d8ec5265ccddfbb94ee2",
+    "6692f0771d7dfd8322ebc9076a0a5c20ffdf7634",
+    "6b5567ee72a5b49eb9d4466a544126150ce3c27c",
+    "aec5c35a307831224efaac6f84162e153a1841c0",
+    "c870548fac92db9b6cdf851fd5a3735cea3c2304",
+    "cec686054a5adaf9f9796d284f8ed8e78b9795f7"
+  ]
+}

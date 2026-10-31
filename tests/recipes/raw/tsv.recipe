@@ -1,3 +1,0 @@
-name raw-tsv
-match *.tab
-grammar tsv

@@ -1,5 +1,0 @@
-tier0.bin scalar_records 1112064
-tier0.bin record_bytes 64
-tier0.bin order memcmp(id)
-tier0.bin blake3-256 a6540fe9f93da1c37563deb16991c6aeffb77f90c05a99616ee5d925eb3346ae
-tier0.bin sha256 56fc87097cb1fe081acbe9b4da91d8f34aadb15c2ce4b091873afbc6342779fe

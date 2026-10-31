@@ -1,3 +1,0 @@
-name raw-turtle
-match *.ttl
-grammar turtle

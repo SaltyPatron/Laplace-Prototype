@@ -1,3 +1,0 @@
-name raw-jsonl
-match *.jsonl
-grammar json

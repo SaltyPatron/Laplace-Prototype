@@ -1,3 +1,0 @@
-name raw-csv
-match *.csv
-grammar csv

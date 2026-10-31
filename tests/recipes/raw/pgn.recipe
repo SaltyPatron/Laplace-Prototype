@@ -1,3 +1,0 @@
-name raw-pgn
-match *.pgn
-grammar pgn
