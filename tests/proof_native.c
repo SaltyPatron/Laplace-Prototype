@@ -145,9 +145,9 @@ static void compare_highways(const char *before,const char *after){
 int main(int argc,char **argv){
     require(argc==4,"usage: proof_native cache|database TIER0 HIGHWAY|CONNINFO; compare OLD_HIGHWAY NEW_HIGHWAY");
     if(!strcmp(argv[1],"compare")){compare_highways(argv[2],argv[3]);return 0;}
-    const lp_tier0_record *tier0=lp_tier0_map(argv[2]); require(tier0!=NULL,"canonical scalar Tier-0 cache");
+    const lp_tier0_record *tier0=lp_tier0_map(argv[2]); require(tier0!=NULL,"complete Unicode Tier-0 cache");
     FILE *f=fopen(argv[2],"rb"); require(f!=NULL,"Tier-0 file"); require(!fseek(f,0,SEEK_END),"Tier-0 size");
-    require(ftell(f)==(long)((size_t)LP_TIER0_COUNT*sizeof *tier0) && LP_TIER0_COUNT==1112064,"1,112,064 scalar records"); fclose(f);
+    require(ftell(f)==(long)((size_t)LP_TIER0_COUNT*sizeof *tier0) && LP_TIER0_COUNT==LP_NCP,"all 1,114,112 Unicode codepoint records"); fclose(f);
     if (!strcmp(argv[1],"cache")) cache(tier0,argv[3]);
     else if (!strcmp(argv[1],"database")) database(argv[3],tier0);
     else require(0,"unknown proof command");
