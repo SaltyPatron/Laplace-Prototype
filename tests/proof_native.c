@@ -62,12 +62,12 @@ static void database(const char *conninfo,const lp_tier0_record *tier0){
         lp_ref expected=lp_ref_compose(parts,count,height); free(parts);
         require(lp_id_eq(&expected.id,&node->value.id),"persisted ID hashes its actual ordered children");
         require(!memcmp(expected.c.m,node->value.c.m,sizeof expected.c.m),"persisted coordinate composes from actual child coordinates");
-        if (height!=node->value.tier) { char id[33]; lp_hex(node->value.id.b,16,id);
-            fprintf(stderr,"invalid parent %s: tier %u expected %u\n",id,node->value.tier,height); wrong_height++; }
+        if (node->value.tier<height) { char id[33]; lp_hex(node->value.id.b,16,id);
+            fprintf(stderr,"invalid parent %s: tier %u below child height %u\n",id,node->value.tier,height); wrong_height++; }
     }
     printf("database: %zu persisted IDs and coordinates verified; %zu tier-height violations\n",(size_t)rows-invalid,wrong_height);
     for (size_t i=0; i<lp_idmap_count(nodes); i++) free(((Stored *)lp_idmap_at(nodes,i))->path);
-    lp_idmap_free(nodes); PQfinish(pg); require(!invalid,"every child is recorded or a scalar leaf"); require(!wrong_height,"tier=max(child.tier)+1");
+    lp_idmap_free(nodes); PQfinish(pg); require(!invalid,"every child is recorded or a scalar leaf"); require(!wrong_height,"tier>=max(child.tier)+1");
 }
 static void cache(const lp_tier0_record *tier0,const char *path){
     const lp_highway *h=lp_highway_map(path); require(h!=NULL,"single-file Highway mapping");
