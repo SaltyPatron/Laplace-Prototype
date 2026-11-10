@@ -95,7 +95,7 @@ try {
     Invoke-Proof $NativeProof @('database',$Tier0,$ConnInfo) 'gate-a-native-database' | Write-Host
     if ((Read-Sql 'SHOW max_prepared_transactions') -ne '0') { throw 'The zero-2PC proof requires max_prepared_transactions=0' }
     if ((Read-Sql "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='stage' AND c.relkind='r' AND c.relpersistence<>'u'") -ne '0') { throw 'A stage table is logged' }
-    $countsSql='SELECT (SELECT count(*) FROM entity),(SELECT count(*) FROM physicality),(SELECT count(*) FROM witness),(SELECT count(*) FROM consensus)'
+    $countsSql='SELECT (SELECT count(*) FROM entity),(SELECT count(*) FROM physicality),(SELECT count(DISTINCT witness) FROM attestation),(SELECT count(*) FROM consensus)'
     $counts=Read-Sql $countsSql
     if ([int]($counts.Split('|')[-1]) -ne 4) { throw 'Four actual language claims were not materialized' }
     $standings="SELECT md5(string_agg(claim::text||rating::text||deviation::text||volatility::text||matches::text,',' ORDER BY claim)) FROM consensus"
